@@ -205,6 +205,17 @@ a.btn{text-decoration:none}
 .tmark.on{color:var(--accent)}
 .tmark.ok{color:var(--ok)}
 .tmark.ng{color:var(--ng)}
+.starbtn{appearance:none;-webkit-appearance:none;background:none;border:1px solid var(--line);border-radius:999px;width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem;line-height:1;color:var(--muted);cursor:pointer;flex:none}
+.starbtn.on{color:var(--accent);border-color:var(--accent);background:var(--accent-soft);text-shadow:0 0 10px rgba(242,163,58,.4)}
+.opt.unk{border-style:dashed;background:transparent;color:var(--muted)}
+.opt.unk.chosen{border-color:var(--ng);color:var(--ink)}
+.navrow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.navrow .btn{justify-content:center}
+.starico{color:var(--accent)}
+.noterow{display:flex;align-items:center;gap:10px}
+.noterow .notehead{flex:1;min-width:0}
+.note.dim{opacity:.55}
+.tabs.five{grid-template-columns:1.2fr repeat(4,minmax(0,1fr))}
 .notes{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:10px}
 .qa{display:flex;flex-direction:column;gap:6px;background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .qa .qq{font-weight:700}
@@ -241,14 +252,15 @@ a.btn{text-decoration:none}
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
-  const APP_VERSION = "v12";
+  const APP_VERSION = "v13";
 
   let pack = { days: [] }, basePack = { days: [] }, syl = { topics: [] };
   let remoteNotes = [];
   const pasteOpen = new Set();
   let rec = { days: {} };
   let view = "home", cur = null, detailDay = null;
-  let fieldSel = CATS[0].key, fieldWrongOnly = false;
+  let fieldSel = CATS[0].key, fieldWrongOnly = false, starField = "all";
+  const unstarredNow = new Set();
   const openNote = new Set();
   const openDeep = new Set();
   const app = document.getElementById("app");
@@ -281,6 +293,28 @@ a.btn{text-decoration:none}
   const fmtDate = (s) => (s || "").replace(/^\d{4}-(\d{2})-(\d{2})$/, (_, m, d) => `${+m}/${+d}`);
   const dayOf = (n) => pack.days.find(d => d.day === n);
   const answered = (day, i) => r(day).chosen[i] != null;
+  const unknownAns = (day, i) => r(day).chosen[i] === -1;
+  const sKey = (day, i) => `${day}-${i}`;
+  const isStar = (day, i) => !!(rec.stars && rec.stars[sKey(day, i)]);
+  function toggleStar(day, i) {
+    rec.stars = rec.stars || {};
+    const k = sKey(day, i);
+    if (rec.stars[k]) { delete rec.stars[k]; unstarredNow.add(k); toast("★を外しました"); }
+    else { rec.stars[k] = Date.now(); unstarredNow.delete(k); toast("★見返しリストに入れました"); }
+    persist(); render();
+  }
+  function starBtn(day, i) {
+    const on = isStar(day, i);
+    return h("button", { class: "starbtn" + (on ? " on" : ""), "aria-pressed": on ? "true" : "false", "aria-label": on ? "見返しリストから外す" : "見返しリストに入れる", onclick: (e) => { e.stopPropagation(); toggleStar(day, i); } }, on ? "★" : "☆");
+  }
+  function starredItems() {
+    const out = [];
+    for (const d of pack.days) d.questions.forEach((q, i) => {
+      const k = sKey(d.day, i);
+      if (isStar(d.day, i) || unstarredNow.has(k)) out.push({ d, i, q, at: (rec.stars && rec.stars[k]) || 0, on: isStar(d.day, i) });
+    });
+    return out.sort((a, b) => (b.on - a.on) || (b.at - a.at));
+  }
   const right = (d, i) => answered(d.day, i) && r(d.day).chosen[i] === d.questions[i].answer;
   let toastT;
   function toast(msg) {
@@ -330,12 +364,19 @@ a.btn{text-decoration:none}
     cur = { mode: "review", items, pos: 0, picked: null, results: [] };
     go("quiz");
   }
+  function startStars() {
+    const items = starredItems().filter(x => x.on).map(x => ({ day: x.d.day, i: x.i, q: x.q }));
+    if (!items.length) return;
+    cur = { mode: "star", items, pos: 0, picked: null, results: [] };
+    go("quiz");
+  }
   function pick(k) {
     if (!cur || cur.picked != null) return;
     cur.picked = k;
     const it = cur.items[cur.pos];
     if (cur.mode === "day") r(it.day).chosen[it.i] = k;
-    else { cur.results[cur.pos] = k === it.q.answer; if (k === it.q.answer) r(it.day).reviewedOk[it.i] = true; }
+    else if (cur.mode === "review") { cur.results[cur.pos] = k === it.q.answer; if (k === it.q.answer) r(it.day).reviewedOk[it.i] = true; }
+    else cur.results[cur.pos] = k === it.q.answer;
     persist();
     render();
     const fb = document.getElementById("fb"); if (fb) fb.scrollIntoView({ block: "nearest" });
@@ -366,6 +407,10 @@ a.btn{text-decoration:none}
       h("div", { class: "stat" }, h("span", { class: "label" }, "実施"), h("span", { class: "n" }, st.days, h("small", null, "日"))),
       h("div", { class: "stat" }, h("span", { class: "label" }, "正答率"), h("span", { class: "n" }, st.n ? Math.round(st.ok / st.n * 100) : "–", h("small", null, st.n ? "%" : ""))),
       h("div", { class: "stat" }, h("span", { class: "label" }, "復習待ち"), h("span", { class: "n" }, st.pending, h("small", null, "問")))));
+    const starN = Object.keys(rec.stars || {}).length;
+    nodes.push(h("div", { class: "navrow" },
+      h("button", { class: "btn ghost", onclick: () => { unstarredNow.clear(); go("stars"); } }, h("span", { class: "starico" }, "★"), `見返しリスト（${starN}）`),
+      h("button", { class: "btn ghost", onclick: () => go("fields") }, "分野別ノート")));
 
     const action = h("section", { class: "card" });
     const target = inProg || nd;
@@ -735,26 +780,28 @@ a.btn{text-decoration:none}
     const it = cur.items[cur.pos], q = it.q, total = cur.items.length;
     const nodes = [h("div", { class: "qbar" },
       h("button", { class: "back", onclick: () => go("home") }, "← ホームへ"),
-      h("span", { class: "dayno" }, cur.mode === "day" ? `DAY ${cur.day} · ${cur.pos + 1}/${total}` : `復習 · ${cur.pos + 1}/${total}`))];
+      h("span", { class: "dayno" }, cur.mode === "day" ? `DAY ${cur.day} · ${cur.pos + 1}/${total}` : `${cur.mode === "star" ? "★解き直し" : "復習"} · ${cur.pos + 1}/${total}`))];
     if (total <= 12) nodes.push(h("div", { class: "pips", "aria-hidden": "true" }, cur.items.map((x, k) => {
       let c = "pip";
       if (cur.mode === "day" && answered(x.day, x.i)) c += right(dayOf(x.day), x.i) ? " ok" : " ng";
-      else if (cur.mode === "review" && cur.results[k] != null) c += cur.results[k] ? " ok" : " ng";
+      else if (cur.mode !== "day" && cur.results[k] != null) c += cur.results[k] ? " ok" : " ng";
       else if (k === cur.pos) c += " on";
       return h("span", { class: c });
     })));
     const card = h("article", { class: "card" },
-      h("div", { class: "row", style: "align-items:center;gap:8px" }, chip(q.category), cur.mode === "review" ? h("span", { class: "small muted" }, `Day${it.day} より`) : null),
+      h("div", { class: "row", style: "align-items:center;gap:8px" }, chip(q.category), cur.mode !== "day" ? h("span", { class: "small muted" }, `Day${it.day} より`) : null, h("span", { style: "margin-left:auto" }, starBtn(it.day, it.i))),
       h("p", { class: "prompt" }, q.prompt),
       h("div", { class: "opts" }, q.options.map((o, k) => {
         let c = "opt", tag = null;
         if (cur.picked != null) { if (k === q.answer) { c += " correct"; tag = "正解"; } else if (k === cur.picked) { c += " wrong"; tag = "あなたの答え"; } }
         return h("button", { class: c, disabled: cur.picked != null, onclick: () => pick(k) }, h("span", { class: "k" }, KEYS[k]), h("span", null, o, tag ? h("span", { class: "tag" }, tag) : null));
-      })));
+      }),
+      h("button", { class: "opt unk" + (cur.picked === -1 ? " chosen" : ""), disabled: cur.picked != null, onclick: () => pick(-1) }, h("span", { class: "k" }, "？"), h("span", null, "わからない", cur.picked === -1 ? h("span", { class: "tag" }, "あなたの答え") : null))));
     if (cur.picked != null) {
       const ok = cur.picked === q.answer;
       card.append(h("div", { class: "fb", id: "fb" },
-        h("p", { class: "verdict " + (ok ? "ok" : "ng") }, ok ? "正解" : `不正解　正解は ${KEYS[q.answer]}`),
+        h("p", { class: "verdict " + (ok ? "ok" : "ng") }, ok ? "正解" : cur.picked === -1 ? `わからない　正解は ${KEYS[q.answer]}` : `不正解　正解は ${KEYS[q.answer]}`),
+        !ok && !isStar(it.day, it.i) ? h("p", { class: "small muted" }, "あとで見返したいときは、右上の☆を押すと★見返しリストに入ります。") : null,
         h("p", null, q.explanation),
         q.detail ? h("p", { class: "small" }, q.detail) : null,
         q.keyPoints && q.keyPoints.length ? h("ul", { class: "kp" }, q.keyPoints.map(k => h("li", null, k))) : null,
@@ -777,9 +824,11 @@ a.btn{text-decoration:none}
             h("button", { class: "btn ghost", onclick: () => go("home") }, "ホームへ")))];
     }
     const ok = cur.results.filter(Boolean).length;
+    const star = cur.mode === "star";
     return [
-      h("div", { class: "dhead" }, h("span", { class: "dayno" }, "復習 完了"), h("h1", null, "間違えた問題の復習"), h("p", { class: "result-score" }, ok, h("small", null, ` / ${cur.items.length} 正解`)),
-        h("p", { class: "small muted" }, "正解できた問題は復習リストから外れます。")),
+      h("div", { class: "dhead" }, h("span", { class: "dayno" }, star ? "★解き直し 完了" : "復習 完了"), h("h1", null, star ? "★見返しリストの解き直し" : "間違えた問題の復習"), h("p", { class: "result-score" }, ok, h("small", null, ` / ${cur.items.length} 正解`)),
+        h("p", { class: "small muted" }, star ? "解き直しの結果は記録に残りません。★は自分で外すまで残ります。" : "正解できた問題は復習リストから外れます。")),
+      star ? h("div", { class: "row" }, h("button", { class: "btn ghost", onclick: () => go("stars") }, "★見返しリストへ")) : null,
       h("div", { class: "row" }, h("button", { class: "btn primary", onclick: () => go("home") }, "ホームへ"))];
   }
 
@@ -796,7 +845,8 @@ a.btn{text-decoration:none}
       const a = answered(d.day, i), good = right(d, i), ch = rr.chosen[i];
       nodes.push(h("article", { class: "card" },
         h("div", { class: "row", style: "align-items:center;gap:8px" }, h("span", { class: "mono small muted" }, `Q${i + 1}`), chip(q.category),
-          a ? h("span", { class: good ? "mark-ok small" : "mark-ng small" }, good ? "○ 正解" : (rr.reviewedOk[i] ? "× → 復習で正解" : "× 不正解")) : h("span", { class: "small muted" }, "未解答")),
+          a ? h("span", { class: good ? "mark-ok small" : "mark-ng small" }, good ? "○ 正解" : (rr.reviewedOk[i] ? (ch === -1 ? "？ → 復習で正解" : "× → 復習で正解") : (ch === -1 ? "？ わからない" : "× 不正解"))) : h("span", { class: "small muted" }, "未解答"),
+          h("span", { style: "margin-left:auto" }, starBtn(d.day, i))),
         h("p", { class: "prompt" }, q.prompt),
         h("div", { class: "opts" }, q.options.map((o, k) => {
           let c = "opt", tag = null;
@@ -866,21 +916,46 @@ a.btn{text-decoration:none}
     if (!list.length) nodes.push(h("p", { class: "empty card" }, fieldWrongOnly ? "間違えた問題はありません。" : "この分野の問題はまだ解いていません。"));
     list.slice().reverse().forEach(x => {
       const { d, i, q } = x, key = `${d.day}-${i}`, open = openNote.has(key), nn = notesFor(d.day, i).length;
-      const status = !x.a ? h("span", { class: "small muted" }, "解答なし") : x.good ? h("span", { class: "mark-ok small" }, "○") : h("span", { class: "mark-ng small" }, x.reviewed ? "×→復習で○" : "×");
-      const card = h("article", { class: "card note" },
-        h("button", { class: "notehead", onclick: () => { open ? openNote.delete(key) : openNote.add(key); render(); }, "aria-expanded": open ? "true" : "false" },
-          h("span", { class: "dayno" }, `Day${d.day} Q${i + 1}`), status, nn ? h("span", { class: "small muted" }, `会話${nn}`) : null, h("span", { class: "chev" }, open ? "－" : "＋")),
-        h("p", { class: "prompt" }, q.prompt),
-        h("p", { class: "ans" }, h("span", { class: "label" }, "正解 "), q.options[q.answer]),
-        q.keyPoints && q.keyPoints.length ? h("ul", { class: "kp" }, q.keyPoints.map(k => h("li", null, k))) : null);
-      if (open) card.append(h("div", { class: "fb" }, h("p", null, q.explanation), q.detail ? h("p", { class: "small" }, q.detail) : null, deepBlock(d.day, i, q)));
-      nodes.push(card);
+      nodes.push(noteCard(d, i, q));
     });
     return nodes;
   }
 
+  function noteCard(d, i, q) {
+      const key = `${d.day}-${i}`, open = openNote.has(key), nn = notesFor(d.day, i).length;
+      const a = answered(d.day, i), good = right(d, i), unk = unknownAns(d.day, i), rv = r(d.day).reviewedOk[i];
+      const status = !a ? h("span", { class: "small muted" }, "解答なし") : good ? h("span", { class: "mark-ok small" }, "○") : h("span", { class: "mark-ng small" }, (unk ? "？" : "×") + (rv ? "→復習で○" : ""));
+      const card = h("article", { class: "card note" + (isStar(d.day, i) || !unstarredNow.has(key) ? "" : " dim") },
+        h("div", { class: "noterow" },
+          h("button", { class: "notehead", onclick: () => { open ? openNote.delete(key) : openNote.add(key); render(); }, "aria-expanded": open ? "true" : "false" },
+            h("span", { class: "dayno" }, `Day${d.day} Q${i + 1}`), status, nn ? h("span", { class: "small muted" }, `会話${nn}`) : null, h("span", { class: "chev" }, open ? "－" : "＋")),
+          starBtn(d.day, i)),
+        h("p", { class: "prompt" }, q.prompt),
+        h("p", { class: "ans" }, h("span", { class: "label" }, "正解 "), q.options[q.answer]),
+        q.keyPoints && q.keyPoints.length ? h("ul", { class: "kp" }, q.keyPoints.map(k => h("li", null, k))) : null);
+      if (open) card.append(h("div", { class: "fb" }, h("p", null, q.explanation), q.detail ? h("p", { class: "small" }, q.detail) : null, deepBlock(d.day, i, q)));
+      return card;
+  }
+
+  function viewStars() {
+    const items = starredItems(), on = items.filter(x => x.on);
+    const nodes = [
+      h("div", { class: "qbar" }, h("button", { class: "back", onclick: () => { unstarredNow.clear(); go("home"); } }, "← ホームへ"), h("span", { class: "dayno" }, "STARRED")),
+      h("div", { class: "dhead" }, h("h1", null, "★見返しリスト"), h("p", { class: "small muted" }, "☆を押した問題がここにたまります。★を押すと外せます（このページを出るまでは、ここに残るので付け直せます）。")),
+    ];
+    if (on.length) nodes.push(h("div", { class: "row" }, h("button", { class: "btn primary", onclick: startStars }, `★の問題を解き直す（${on.length}）`)));
+    const counts = new Map(CATS.map(c => [c.key, on.filter(x => catOf(x.q.category).key === c.key).length]));
+    nodes.push(h("div", { class: "tabs five", role: "tablist" },
+      h("button", { class: "tab" + (starField === "all" ? " on" : ""), style: "--c:var(--accent)", onclick: () => { starField = "all"; render(); } }, "すべて", h("span", { class: "tabn" }, on.length)),
+      CATS.map(c => h("button", { class: "tab" + (starField === c.key ? " on" : ""), style: `--c:var(${c.c})`, onclick: () => { starField = c.key; render(); } }, h("span", { class: "dot" }), c.short, h("span", { class: "tabn" }, counts.get(c.key))))));
+    const list = items.filter(x => starField === "all" || catOf(x.q.category).key === starField);
+    if (!list.length) nodes.push(h("p", { class: "empty card" }, "まだ★の問題はありません。問題の右上の☆を押すと、ここに入ります。"));
+    list.forEach(x => nodes.push(noteCard(x.d, x.i, x.q)));
+    return nodes;
+  }
+
   function render() {
-    const nodes = view === "quiz" && cur ? viewQuiz() : view === "result" && cur ? viewResult() : view === "detail" ? viewDetail() : view === "fields" ? viewFields() : (view = "home", viewHome());
+    const nodes = view === "quiz" && cur ? viewQuiz() : view === "result" && cur ? viewResult() : view === "detail" ? viewDetail() : view === "fields" ? viewFields() : view === "stars" ? viewStars() : (view = "home", viewHome());
     const kept = {};
     app.querySelectorAll("input[id],textarea[id]").forEach(el => { if (el.value) kept[el.id] = el.value; });
     app.replaceChildren(...nodes);

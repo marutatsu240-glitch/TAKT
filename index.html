@@ -515,7 +515,14 @@ details summary{cursor:pointer;font-weight:700}
   loadPack().then(render);
   addEventListener("online", () => { loadPack().then(render); });
   addEventListener("offline", render);
-  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if ("serviceWorker" in navigator) {
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (hadController && !reloaded && view === "home") { reloaded = true; location.reload(); }
+    });
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(reg => reg.update()).catch(() => {});
+  }
   if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
 })();
 </script>

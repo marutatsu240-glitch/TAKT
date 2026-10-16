@@ -1,0 +1,514 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>TAKT</title>
+<meta name="description" content="食品工場の生産技術を、毎日5問ずつ。">
+<meta name="theme-color" content="#11151b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="TAKT">
+<link rel="apple-touch-icon" href="icon-180.png">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<style>
+/* Layout: one 640px column. Status strip, today's action, field balance, logbook. System fonts only so it works offline. */
+:root{
+  --bg:#edf0f3; --surface:#ffffff; --sunk:#e3e7ed; --ink:#17202c; --muted:#596476; --line:#d2d8e0;
+  --accent:#a8690a; --accent-soft:#f5e8cf;
+  --ok:#1b7a45; --ok-soft:#ddf0e4; --ng:#b33232; --ng-soft:#f7e1e1;
+  --c-phys:#2c63aa; --c-food:#b85f15; --c-equip:#287a4f; --c-qc:#7049a6; --c-other:#596476;
+  --f-body:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
+  --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){ :root{
+  --bg:#11151b; --surface:#1a2029; --sunk:#232a35; --ink:#e7ebf1; --muted:#9aa5b5; --line:#2c3440;
+  --accent:#e2a640; --accent-soft:#3a2d16;
+  --ok:#5cc58a; --ok-soft:#173327; --ng:#ef7a7a; --ng-soft:#3a1d1f;
+  --c-phys:#7aa8ec; --c-food:#eb9a55; --c-equip:#6ccb98; --c-qc:#b496e6; --c-other:#9aa5b5;
+  color-scheme:dark;
+}}
+*{box-sizing:border-box}
+html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.75;-webkit-tap-highlight-color:transparent}
+.wrap{max-width:640px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-top:calc(16px + env(safe-area-inset-top,0px));padding-bottom:calc(48px + env(safe-area-inset-bottom,0px));display:flex;flex-direction:column;gap:22px}
+h1,h2,h3{font-weight:700;margin:0;text-wrap:balance;line-height:1.35}
+h1{font-size:1.45rem}
+h2{font-size:1.05rem}
+p{margin:0}
+[hidden]{display:none!important}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.muted{color:var(--muted)}
+.small{font-size:.82rem}
+.label{font-family:var(--f-mono);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding-bottom:14px;border-bottom:2px solid var(--ink)}
+.brand{font-family:var(--f-mono);font-weight:700;font-size:1.6rem;letter-spacing:.2em;line-height:1.1}
+.top .sub{font-size:.8rem;color:var(--muted)}
+.dayno{font-family:var(--f-mono);font-weight:600;font-size:.85rem;color:var(--accent);white-space:nowrap}
+.net{font-size:.72rem;font-weight:700;border:1px solid var(--line);border-radius:999px;padding:0 8px;color:var(--muted)}
+
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border:1px solid var(--line);border-radius:12px;background:var(--surface)}
+.stat{padding:12px 14px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.stat+.stat{border-left:1px solid var(--line)}
+.stat .n{font-family:var(--f-mono);font-weight:600;font-size:1.4rem;line-height:1.2}
+.stat .n small{font-size:.8rem;font-weight:500;color:var(--muted);margin-left:2px}
+
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
+.row{display:flex;flex-wrap:wrap;gap:10px}
+.btn{appearance:none;-webkit-appearance:none;border:1px solid transparent;border-radius:10px;padding:12px 18px;font:700 .95rem var(--f-body);cursor:pointer;display:inline-flex;align-items:center;gap:8px;line-height:1.3;color:inherit}
+.btn.primary{background:var(--ink);color:var(--bg)}
+.btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
+.btn.ghost:active{background:var(--sunk)}
+.btn.sm{padding:8px 12px;font-size:.85rem}
+.btn:disabled{opacity:.45}
+.btn:focus-visible,.opt:focus-visible,.hrow:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.notice{font-size:.85rem;color:var(--muted);border-left:3px solid var(--line);padding-left:10px}
+.notice.warn{border-color:var(--ng);color:var(--ink)}
+
+.section{display:flex;flex-direction:column;gap:10px}
+.section-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.fields{display:flex;flex-direction:column;gap:8px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px}
+.field{display:grid;grid-template-columns:4.2em minmax(0,1fr) 6em;align-items:center;gap:10px;font-size:.88rem}
+.field .name{display:flex;align-items:center;gap:6px;min-width:0}
+.dot{width:8px;height:8px;border-radius:2px;background:var(--c);flex:none}
+.track{height:8px;background:var(--sunk);border-radius:4px;overflow:hidden}
+.fill{height:100%;background:var(--c);border-radius:4px}
+.field .pct{text-align:right;font-family:var(--f-mono);font-size:.78rem;font-variant-numeric:tabular-nums}
+
+.log{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:12px;background:var(--surface);overflow:hidden}
+.hrow{appearance:none;background:none;border:0;border-top:1px solid var(--line);text-align:left;font:inherit;color:inherit;cursor:pointer;display:grid;grid-template-columns:4.2em minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px}
+.hrow:first-child{border-top:0}
+.hrow:active{background:var(--sunk)}
+.hrow .d{font-family:var(--f-mono);font-weight:600;color:var(--accent)}
+.hrow .t{min-width:0}
+.hrow .t b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hrow .s{font-family:var(--f-mono);font-size:.85rem;text-align:right}
+.hrow.locked{opacity:.55}
+.empty{padding:18px 14px;color:var(--muted);font-size:.9rem}
+
+.qbar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.pips{display:flex;gap:4px}
+.pip{width:22px;height:6px;border-radius:3px;background:var(--line)}
+.pip.on{background:var(--ink)}
+.pip.ok{background:var(--ok)}
+.pip.ng{background:var(--ng)}
+.chip{display:inline-flex;align-items:center;font-size:.76rem;font-weight:700;color:var(--c);border:1px solid var(--c);border-radius:999px;padding:1px 10px}
+.prompt{font-size:1.02rem;line-height:1.8}
+.opts{display:flex;flex-direction:column;gap:8px}
+.opt{appearance:none;-webkit-appearance:none;font:inherit;color:inherit;text-align:left;background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:12px;display:grid;grid-template-columns:1.8em minmax(0,1fr);gap:8px;cursor:pointer;line-height:1.6}
+.opt .k{font-family:var(--f-mono);font-weight:600;color:var(--muted)}
+.opt.correct{background:var(--ok-soft);border-color:var(--ok)}
+.opt.correct .k{color:var(--ok)}
+.opt.wrong{background:var(--ng-soft);border-color:var(--ng)}
+.opt.wrong .k{color:var(--ng)}
+.opt .tag{font-size:.74rem;font-weight:700;margin-left:6px}
+.opt.correct .tag{color:var(--ok)}
+.opt.wrong .tag{color:var(--ng)}
+.fb{border-top:1px dashed var(--line);padding-top:14px;display:flex;flex-direction:column;gap:10px}
+.verdict{font-weight:700;font-size:1.05rem}
+.verdict.ok{color:var(--ok)}
+.verdict.ng{color:var(--ng)}
+.kp{margin:0;padding:10px 12px 10px 28px;background:var(--accent-soft);border-radius:8px;font-size:.9rem}
+.deep{background:var(--sunk);border-radius:10px;padding:12px 14px;display:flex;flex-direction:column;gap:8px;font-size:.92rem;line-height:1.85}
+.deep h4{font-weight:700;font-size:.9rem;margin:6px 0 0;color:var(--accent)}
+.result-score{font-family:var(--f-mono);font-weight:600;font-size:2.4rem;line-height:1}
+.result-score small{font-size:1rem;color:var(--muted)}
+.rlist{display:flex;flex-direction:column;gap:6px;margin:0;padding:0;list-style:none}
+.rlist li{display:grid;grid-template-columns:1.6em minmax(0,1fr);gap:8px;font-size:.9rem}
+.mark-ok{color:var(--ok);font-weight:700}
+.mark-ng{color:var(--ng);font-weight:700}
+.back{appearance:none;background:none;border:0;color:var(--muted);font:inherit;font-size:.88rem;cursor:pointer;padding:4px 0;text-align:left}
+.dhead{display:flex;flex-direction:column;gap:6px}
+.askbox{display:flex;flex-direction:column;gap:8px;border-top:1px solid var(--line);padding-top:10px}
+.askbox input{width:100%;font:inherit;font-size:16px;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 10px}
+.later{display:flex;flex-direction:column;gap:10px}
+.litem{display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px}
+.litem:first-child{border-top:0;padding-top:0}
+textarea{width:100%;min-height:7em;font:.8rem var(--f-mono);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px}
+details summary{cursor:pointer;font-weight:700}
+.toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:999px;font-size:.85rem;font-weight:700}
+.foot{font-size:.76rem;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div class="toast" id="toast" role="status" hidden></div>
+<script>
+(() => {
+  const CATS = [
+    { key: "物理・工学計算", short: "物理", c: "--c-phys" },
+    { key: "食品プロセス", short: "食品", c: "--c-food" },
+    { key: "設備・電気・制御", short: "設備", c: "--c-equip" },
+    { key: "品質・改善手法", short: "品質", c: "--c-qc" },
+  ];
+  const OTHER = { key: "その他", short: "他", c: "--c-other" };
+  const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
+  const KEYS = ["A", "B", "C", "D"];
+  const STORE = "takt.records.v1";
+
+  let pack = { days: [] };
+  let rec = { days: {} };
+  let view = "home", cur = null, detailDay = null;
+  const openDeep = new Set();
+  const app = document.getElementById("app");
+
+  // ---------- storage ----------
+  function load() {
+    try { const s = localStorage.getItem(STORE); if (s) rec = JSON.parse(s); } catch (_) {}
+    if (!rec || typeof rec !== "object" || !rec.days) rec = { days: {} };
+  }
+  function persist() {
+    try { localStorage.setItem(STORE, JSON.stringify(rec)); return true; }
+    catch (_) { toast("記録を保存できませんでした"); return false; }
+  }
+  function r(day) { return rec.days[day] || (rec.days[day] = { chosen: [], reviewedOk: [], done: false, date: null }); }
+
+  // ---------- helpers ----------
+  function h(tag, props, ...kids) {
+    const el = document.createElement(tag);
+    if (props) for (const [k, v] of Object.entries(props)) {
+      if (v == null || v === false) continue;
+      if (k === "class") el.className = v;
+      else if (k === "style") el.setAttribute("style", v);
+      else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
+      else el.setAttribute(k, v === true ? "" : v);
+    }
+    for (const k of kids.flat(Infinity)) { if (k == null || k === false) continue; el.append(k instanceof Node ? k : document.createTextNode(String(k))); }
+    return el;
+  }
+  const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const fmtDate = (s) => (s || "").replace(/^\d{4}-(\d{2})-(\d{2})$/, (_, m, d) => `${+m}/${+d}`);
+  const dayOf = (n) => pack.days.find(d => d.day === n);
+  const answered = (day, i) => r(day).chosen[i] != null;
+  const right = (d, i) => answered(d.day, i) && r(d.day).chosen[i] === d.questions[i].answer;
+  let toastT;
+  function toast(msg) {
+    const t = document.getElementById("toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toastT); toastT = setTimeout(() => { t.hidden = true; }, 2200);
+  }
+  async function copy(text, okMsg) {
+    try { await navigator.clipboard.writeText(text); toast(okMsg); }
+    catch (_) { toast("コピーできませんでした。長押しで選択してください"); }
+  }
+  function chip(cat) { const c = catOf(cat); return h("span", { class: "chip", style: `--c:var(${c.c})` }, c.key); }
+  function richText(text) {
+    return String(text || "").split(/\n+/).map(s => s.trim()).filter(Boolean).map(s => s.startsWith("■") ? h("h4", null, s.replace(/^■\s*/, "")) : h("p", null, s));
+  }
+
+  function stats() {
+    const per = new Map(CATS.map(c => [c.key, { n: 0, ok: 0 }]));
+    let n = 0, ok = 0, pending = 0, days = 0;
+    for (const d of pack.days) {
+      const rr = rec.days[d.day]; if (!rr) continue;
+      if (rr.done) days++;
+      d.questions.forEach((q, i) => {
+        if (!answered(d.day, i)) return;
+        n++; const good = right(d, i); if (good) ok++; else if (!rr.reviewedOk[i]) pending++;
+        const p = per.get(catOf(q.category).key); if (p) { p.n++; if (good) p.ok++; }
+      });
+    }
+    return { n, ok, pending, per, days };
+  }
+  const nextDay = () => pack.days.find(d => !(rec.days[d.day] && rec.days[d.day].done));
+
+  // ---------- quiz flow ----------
+  function startDay(n) {
+    const d = dayOf(n); if (!d) return;
+    const rr = r(n); if (!rr.date) { rr.date = today(); persist(); }
+    const first = d.questions.findIndex((_, i) => !answered(n, i));
+    cur = { mode: "day", day: n, items: d.questions.map((q, i) => ({ day: n, i, q })), pos: first < 0 ? 0 : first, picked: null };
+    if (first < 0) return finish();
+    go("quiz");
+  }
+  function startReview() {
+    const items = [];
+    for (const d of pack.days) d.questions.forEach((q, i) => {
+      if (answered(d.day, i) && !right(d, i) && !r(d.day).reviewedOk[i]) items.push({ day: d.day, i, q });
+    });
+    if (!items.length) return;
+    cur = { mode: "review", items, pos: 0, picked: null, results: [] };
+    go("quiz");
+  }
+  function pick(k) {
+    if (!cur || cur.picked != null) return;
+    cur.picked = k;
+    const it = cur.items[cur.pos];
+    if (cur.mode === "day") r(it.day).chosen[it.i] = k;
+    else { cur.results[cur.pos] = k === it.q.answer; if (k === it.q.answer) r(it.day).reviewedOk[it.i] = true; }
+    persist();
+    render();
+    const fb = document.getElementById("fb"); if (fb) fb.scrollIntoView({ block: "nearest" });
+  }
+  function next() {
+    cur.pos++; cur.picked = null;
+    if (cur.pos >= cur.items.length) finish(); else { render(); scrollTo(0, 0); }
+  }
+  function finish() {
+    if (cur.mode === "day") { r(cur.day).done = true; persist(); }
+    go("result");
+  }
+  function go(v) { view = v; render(); scrollTo(0, 0); }
+
+  // ---------- views ----------
+  function header(right) {
+    return h("header", { class: "top" },
+      h("div", null, h("div", { class: "brand" }, "TAKT"), h("div", { class: "sub" }, "食品工場の生産技術を、毎日5問ずつ")),
+      h("div", { style: "display:flex;flex-direction:column;align-items:flex-end;gap:4px" },
+        navigator.onLine ? null : h("span", { class: "net" }, "オフライン"), right));
+  }
+
+  function viewHome() {
+    const st = stats(), nd = nextDay();
+    const inProg = pack.days.find(d => rec.days[d.day] && !rec.days[d.day].done && d.questions.some((_, i) => answered(d.day, i)));
+    const nodes = [header(h("span", { class: "dayno" }, nd ? `NEXT DAY ${nd.day}` : "ALL CLEAR"))];
+    nodes.push(h("div", { class: "stats" },
+      h("div", { class: "stat" }, h("span", { class: "label" }, "実施"), h("span", { class: "n" }, st.days, h("small", null, "日"))),
+      h("div", { class: "stat" }, h("span", { class: "label" }, "正答率"), h("span", { class: "n" }, st.n ? Math.round(st.ok / st.n * 100) : "–", h("small", null, st.n ? "%" : ""))),
+      h("div", { class: "stat" }, h("span", { class: "label" }, "復習待ち"), h("span", { class: "n" }, st.pending, h("small", null, "問")))));
+
+    const action = h("section", { class: "card" });
+    const target = inProg || nd;
+    if (target) {
+      const done = target.questions.filter((_, i) => answered(target.day, i)).length;
+      action.append(
+        h("h2", null, inProg ? `Day ${target.day} の途中から` : `Day ${target.day} をはじめる`),
+        h("p", { class: "small muted" }, `${target.theme}　${inProg ? `${done} / ${target.questions.length} 問解答済み` : `${target.questions.length}問`}`),
+        h("div", { class: "row" },
+          h("button", { class: "btn primary", onclick: () => startDay(target.day) }, inProg ? "続きを解く" : "解きはじめる"),
+          st.pending ? h("button", { class: "btn ghost", onclick: startReview }, `間違えた問題を復習（${st.pending}）`) : null));
+    } else {
+      action.append(
+        h("h2", null, "用意した問題はすべて解きました"),
+        h("p", { class: "small muted" }, "下の「Claudeに問題を頼む」から新しい問題を追加できます。"),
+        st.pending ? h("div", { class: "row" }, h("button", { class: "btn ghost", onclick: startReview }, `間違えた問題を復習（${st.pending}）`)) : null);
+    }
+    nodes.push(action);
+    const later = laterCard(); if (later) nodes.push(later);
+    const left = pack.days.filter(d => !(rec.days[d.day] && rec.days[d.day].done)).length;
+    nodes.push(requestCard(left));
+
+    nodes.push(h("section", { class: "section" },
+      h("div", { class: "section-head" }, h("h2", null, "分野別の正答率")),
+      h("div", { class: "fields" }, CATS.map(c => {
+        const p = st.per.get(c.key), pct = p.n ? Math.round(p.ok / p.n * 100) : 0;
+        return h("div", { class: "field", style: `--c:var(${c.c})` },
+          h("span", { class: "name" }, h("span", { class: "dot" }), c.short),
+          h("div", { class: "track", role: "img", "aria-label": `${c.key} 正答率 ${p.n ? pct + "%" : "記録なし"}` }, h("div", { class: "fill", style: `width:${pct}%` })),
+          h("span", { class: "pct" }, p.n ? `${pct}% · ${p.ok}/${p.n}` : "—"));
+      }))));
+
+    const started = pack.days.filter(d => rec.days[d.day] && (rec.days[d.day].done || d.questions.some((_, i) => answered(d.day, i)))).reverse();
+    const rest = pack.days.length - started.length;
+    nodes.push(h("section", { class: "section" },
+      h("div", { class: "section-head" }, h("h2", null, "これまでの記録"), h("span", { class: "small muted" }, rest ? `未着手 ${rest}日分` : "")),
+      h("div", { class: "log" }, started.length ? started.map(d => {
+        const rr = rec.days[d.day], tot = d.questions.length, ok = d.questions.filter((_, i) => right(d, i)).length;
+        return h("button", { class: "hrow", onclick: () => { detailDay = d.day; go("detail"); } },
+          h("span", { class: "d" }, `Day${d.day}`),
+          h("span", { class: "t" }, h("b", null, d.theme), h("span", { class: "small muted" }, fmtDate(rr.date))),
+          h("span", { class: "s" }, rr.done ? `${ok}/${tot}` : "途中"));
+      }) : h("div", { class: "empty" }, "まだ記録はありません。上の「解きはじめる」から Day 1 をはじめると、ここに日ごとの結果がたまっていきます。"))));
+
+    nodes.push(viewBackup());
+    nodes.push(h("p", { class: "foot" }, `問題 ${pack.days.length}日分（${pack.updated || ""} 更新）。記録はこのiPhoneの中だけに保存されます。`));
+    return nodes;
+  }
+
+  function viewBackup() {
+    const ta = h("textarea", { id: "restore", placeholder: "コピーしておいた記録をここに貼り付け", "aria-label": "記録の貼り付け" });
+    return h("details", { class: "card" },
+      h("summary", null, "記録のバックアップ"),
+      h("p", { class: "small muted" }, "記録はこの端末のアプリの中にあります。機種変更やアプリを消す前に、記録をコピーしてメモなどに保存しておいてください。"),
+      h("div", { class: "row" }, h("button", { class: "btn ghost sm", onclick: () => copy(JSON.stringify(rec), "記録をコピーしました") }, "記録をコピー")),
+      ta,
+      h("div", { class: "row" }, h("button", { class: "btn ghost sm", onclick: () => {
+        try {
+          const v = JSON.parse(ta.value);
+          if (!v || typeof v !== "object" || !v.days) throw 0;
+          rec = v; persist(); ta.value = ""; toast("記録を戻しました"); render();
+        } catch (_) { toast("貼り付けた内容を読み取れませんでした"); }
+      } }, "貼り付けた記録で戻す")));
+  }
+
+  // ---------- asking Claude (free: copy + open the Claude app) ----------
+  const CLAUDE_URL = "https://claude.ai/new";
+  const online = () => navigator.onLine;
+  function openClaude(text, msg) {
+    try { navigator.clipboard.writeText(text).catch(() => {}); } catch (_) {}
+    toast(msg || "コピーしました。Claudeで貼り付けて送ってください");
+    window.open(CLAUDE_URL, "_blank", "noopener");
+  }
+  function askText(d, i, question) {
+    const dd = dayOf(d), q = dd && dd.questions[i];
+    if (!q) return question || "";
+    return `TAKT（生産技術トレーニング）Day${d} の問題について質問です。\n\n問題：${q.prompt}\n${q.options.map((o, k) => `${KEYS[k]}. ${o}`).join("\n")}\n正解：${KEYS[q.answer]}\n解説：${q.explanation}\n\n質問：${question || "この問題をもう少しわかりやすく教えてください。"}`;
+  }
+  function saveLater(d, i, question) {
+    rec.ask = rec.ask || [];
+    rec.ask.push({ day: d, i, q: question || "", at: Date.now() });
+    persist(); toast("「あとで聞く」に入れました"); render();
+  }
+  function askBlock(d, i) {
+    const id = `ask-${d}-${i}`;
+    const val = () => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
+    const clear = () => { const el = document.getElementById(id); if (el) el.value = ""; };
+    return h("div", { class: "askbox" },
+      h("input", { id, type: "text", placeholder: "わからないところ（書かなくてもOK）", "aria-label": "この問題への質問" }),
+      h("div", { class: "row" },
+        online() ? h("button", { class: "btn primary sm", onclick: () => { openClaude(askText(d, i, val())); clear(); } }, "Claudeで聞く") : null,
+        h("button", { class: "btn ghost sm", onclick: () => { saveLater(d, i, val()); clear(); } }, "あとで聞く")),
+      online() ? null : h("p", { class: "small muted" }, "オフラインです。「あとで聞く」に入れておくと、電波があるときにホームから聞けます。"));
+  }
+
+  function deepBlock(d, i, q) {
+    const key = `${d}-${i}`, open = openDeep.has(key);
+    const box = h("div", { class: "deep" });
+    if (open) box.append(...richText(q.deep));
+    if (q.deep) box.append(h("div", { class: "row" },
+      h("button", { class: "btn ghost sm", onclick: () => { open ? openDeep.delete(key) : openDeep.add(key); render(); } }, open ? "詳しい解説を閉じる" : "詳しい解説を見る")));
+    box.append(askBlock(d, i));
+    return box;
+  }
+
+  function laterCard() {
+    const list = rec.ask || [];
+    if (!list.length) return null;
+    return h("section", { class: "card" },
+      h("div", { class: "section-head" }, h("h2", null, `あとで聞く（${list.length}）`), online() ? null : h("span", { class: "small muted" }, "電波があるときに聞けます")),
+      h("div", { class: "later" }, list.map((x, k) => h("div", { class: "litem" },
+        h("div", { style: "min-width:0" }, h("span", { class: "dayno" }, `Day${x.day} Q${x.i + 1}`), h("p", { class: "small" }, x.q || "（質問文なし）")),
+        h("div", { class: "row" },
+          online() ? h("button", { class: "btn primary sm", onclick: () => { openClaude(askText(x.day, x.i, x.q)); list.splice(k, 1); persist(); render(); } }, "Claudeで聞く") : null,
+          h("button", { class: "btn ghost sm", "aria-label": "削除", onclick: () => { list.splice(k, 1); persist(); render(); } }, "消す"))))));
+  }
+
+  // ---------- requesting new days (free: ask in Claude chat) ----------
+  const REPO = "marutatsu240-glitch/takt";
+  function requestText() {
+    const st = stats(), last = pack.days.length ? pack.days[pack.days.length - 1].day : 0;
+    const weak = CATS.map(c => { const p = st.per.get(c.key); return `${c.key} ${p.n ? Math.round(p.ok / p.n * 100) + "%（" + p.ok + "/" + p.n + "）" : "記録なし"}`; }).join("、");
+    const themes = pack.days.slice(-10).map(d => `Day${d.day} ${d.theme}`).join(" / ");
+    return `TAKTの問題を追加して。\n\nGitHubの ${REPO} リポジトリの data/pack.json に、Day${last + 1} から5日分（1日5問）を追加してください。README のルール（既存の問題の順番は変えない、正解の番号を必ず確認する、全問に詳しい解説 deep を付ける）に従ってください。数値や基準はWebで裏を取ってください。\n\n今の正答率：${weak}\n最近のテーマ：${themes}`;
+  }
+  function requestCard(left) {
+    return h("section", { class: "card" },
+      h("div", { class: "section-head" }, h("h2", null, "問題を追加する"), h("span", { class: "small muted" }, `残り ${left}日分`)),
+      h("p", { class: "small muted" }, online()
+        ? "ボタンを押すと頼む文章をコピーしてClaudeが開きます。貼り付けて送ると、苦手な分野も考えた5日分が追加され、次にアプリを開いたときに届きます。"
+        : "オフラインです。電波があるときにここから頼めます。"),
+      h("div", { class: "row" }, h("button", { class: "btn " + (left <= 1 ? "primary" : "ghost"), disabled: !online(), onclick: () => openClaude(requestText(), "頼む文章をコピーしました。Claudeで貼り付けて送ってください") }, "Claudeに問題を頼む")));
+  }
+
+  function viewQuiz() {
+    const it = cur.items[cur.pos], q = it.q, total = cur.items.length;
+    const nodes = [h("div", { class: "qbar" },
+      h("button", { class: "back", onclick: () => go("home") }, "← ホームへ"),
+      h("span", { class: "dayno" }, cur.mode === "day" ? `DAY ${cur.day} · ${cur.pos + 1}/${total}` : `復習 · ${cur.pos + 1}/${total}`))];
+    if (total <= 12) nodes.push(h("div", { class: "pips", "aria-hidden": "true" }, cur.items.map((x, k) => {
+      let c = "pip";
+      if (cur.mode === "day" && answered(x.day, x.i)) c += right(dayOf(x.day), x.i) ? " ok" : " ng";
+      else if (cur.mode === "review" && cur.results[k] != null) c += cur.results[k] ? " ok" : " ng";
+      else if (k === cur.pos) c += " on";
+      return h("span", { class: c });
+    })));
+    const card = h("article", { class: "card" },
+      h("div", { class: "row", style: "align-items:center;gap:8px" }, chip(q.category), cur.mode === "review" ? h("span", { class: "small muted" }, `Day${it.day} より`) : null),
+      h("p", { class: "prompt" }, q.prompt),
+      h("div", { class: "opts" }, q.options.map((o, k) => {
+        let c = "opt", tag = null;
+        if (cur.picked != null) { if (k === q.answer) { c += " correct"; tag = "正解"; } else if (k === cur.picked) { c += " wrong"; tag = "あなたの答え"; } }
+        return h("button", { class: c, disabled: cur.picked != null, onclick: () => pick(k) }, h("span", { class: "k" }, KEYS[k]), h("span", null, o, tag ? h("span", { class: "tag" }, tag) : null));
+      })));
+    if (cur.picked != null) {
+      const ok = cur.picked === q.answer;
+      card.append(h("div", { class: "fb", id: "fb" },
+        h("p", { class: "verdict " + (ok ? "ok" : "ng") }, ok ? "正解" : `不正解　正解は ${KEYS[q.answer]}`),
+        h("p", null, q.explanation),
+        q.detail ? h("p", { class: "small" }, q.detail) : null,
+        q.keyPoints && q.keyPoints.length ? h("ul", { class: "kp" }, q.keyPoints.map(k => h("li", null, k))) : null,
+        deepBlock(it.day, it.i, q),
+        h("div", { class: "row" }, h("button", { class: "btn primary", onclick: next }, cur.pos + 1 >= total ? "結果を見る" : "次の問題へ"))));
+    }
+    nodes.push(card);
+    return nodes;
+  }
+
+  function viewResult() {
+    if (cur.mode === "day") {
+      const d = dayOf(cur.day), tot = d.questions.length, ok = d.questions.filter((_, i) => right(d, i)).length;
+      return [
+        h("div", { class: "dhead" }, h("span", { class: "dayno" }, `DAY ${d.day} 完了`), h("h1", null, d.theme), h("p", { class: "result-score" }, ok, h("small", null, ` / ${tot} 正解`))),
+        h("section", { class: "card" },
+          h("ul", { class: "rlist" }, d.questions.map((q, i) => h("li", null, h("span", { class: right(d, i) ? "mark-ok" : "mark-ng" }, right(d, i) ? "○" : "×"), h("span", null, q.prompt.slice(0, 60), q.prompt.length > 60 ? "…" : "")))),
+          h("div", { class: "row" },
+            h("button", { class: "btn primary", onclick: () => { detailDay = d.day; go("detail"); } }, "解説をまとめて見る"),
+            h("button", { class: "btn ghost", onclick: () => go("home") }, "ホームへ")))];
+    }
+    const ok = cur.results.filter(Boolean).length;
+    return [
+      h("div", { class: "dhead" }, h("span", { class: "dayno" }, "復習 完了"), h("h1", null, "間違えた問題の復習"), h("p", { class: "result-score" }, ok, h("small", null, ` / ${cur.items.length} 正解`)),
+        h("p", { class: "small muted" }, "正解できた問題は復習リストから外れます。")),
+      h("div", { class: "row" }, h("button", { class: "btn primary", onclick: () => go("home") }, "ホームへ"))];
+  }
+
+  function viewDetail() {
+    const d = dayOf(detailDay);
+    if (!d) return [h("button", { class: "back", onclick: () => go("home") }, "← ホームへ"), h("p", { class: "muted" }, "この回が見つかりません。")];
+    const rr = r(d.day), ok = d.questions.filter((_, i) => right(d, i)).length;
+    const nodes = [
+      h("button", { class: "back", onclick: () => go("home") }, "← ホームへ"),
+      h("div", { class: "dhead" }, h("span", { class: "dayno" }, `DAY ${d.day} · ${rr.date || ""}`), h("h1", null, d.theme),
+        h("p", { class: "small muted" }, rr.done ? `${ok} / ${d.questions.length} 正解` : "途中"))];
+    if (!rr.done) nodes.push(h("div", null, h("button", { class: "btn primary", onclick: () => startDay(d.day) }, "続きを解く")));
+    d.questions.forEach((q, i) => {
+      const a = answered(d.day, i), good = right(d, i), ch = rr.chosen[i];
+      nodes.push(h("article", { class: "card" },
+        h("div", { class: "row", style: "align-items:center;gap:8px" }, h("span", { class: "mono small muted" }, `Q${i + 1}`), chip(q.category),
+          a ? h("span", { class: good ? "mark-ok small" : "mark-ng small" }, good ? "○ 正解" : (rr.reviewedOk[i] ? "× → 復習で正解" : "× 不正解")) : h("span", { class: "small muted" }, "未解答")),
+        h("p", { class: "prompt" }, q.prompt),
+        h("div", { class: "opts" }, q.options.map((o, k) => {
+          let c = "opt", tag = null;
+          if (a || rr.done) { if (k === q.answer) { c += " correct"; tag = "正解"; } else if (a && k === ch) { c += " wrong"; tag = "あなたの答え"; } }
+          return h("div", { class: c }, h("span", { class: "k" }, KEYS[k]), h("span", null, o, tag ? h("span", { class: "tag" }, tag) : null));
+        })),
+        (a || rr.done) ? h("div", { class: "fb" }, h("p", null, q.explanation), q.detail ? h("p", { class: "small" }, q.detail) : null,
+          q.keyPoints && q.keyPoints.length ? h("ul", { class: "kp" }, q.keyPoints.map(k => h("li", null, k))) : null,
+          deepBlock(d.day, i, q)) : null));
+    });
+    return nodes;
+  }
+
+  function render() {
+    const nodes = view === "quiz" && cur ? viewQuiz() : view === "result" && cur ? viewResult() : view === "detail" ? viewDetail() : (view = "home", viewHome());
+    const kept = {};
+    app.querySelectorAll("input[id],textarea[id]").forEach(el => { if (el.value) kept[el.id] = el.value; });
+    app.replaceChildren(...nodes);
+    for (const [id, v] of Object.entries(kept)) { const el = document.getElementById(id); if (el) el.value = v; }
+  }
+
+  // ---------- boot ----------
+  async function loadPack() {
+    try {
+      const res = await fetch("data/pack.json", { cache: "no-store" });
+      const p = await res.json();
+      if (p && Array.isArray(p.days)) {
+        p.days = p.days.filter(d => !d.removed).map(d => ({ ...d, questions: d.questions }));
+        pack = p;
+      }
+    } catch (_) {}
+  }
+  load();
+  app.append(h("p", { class: "muted" }, "読み込んでいます…"));
+  loadPack().then(render);
+  addEventListener("online", () => { loadPack().then(render); });
+  addEventListener("offline", render);
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+})();
+</script>
+</body>
+</html>

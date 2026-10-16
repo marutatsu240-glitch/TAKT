@@ -185,6 +185,13 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
 .ans{font-weight:700;color:var(--ok)}
 .ans .label{margin-right:4px}
 .steps{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:4px;color:var(--muted)}
+.sheet-bg{position:fixed;inset:0;z-index:10;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center}
+.sheet{width:100%;max-width:640px;background:linear-gradient(180deg,var(--surface-2),var(--surface));border-top:3px solid var(--accent);border-radius:16px 16px 0 0;
+  padding:18px max(16px,env(safe-area-inset-right,0px)) calc(18px + env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px));display:flex;flex-direction:column;gap:12px;max-height:85vh}
+.sheet textarea{min-height:9em;max-height:40vh;font:.82rem/1.6 var(--f-body);background:#0f1418}
+#sheet-status.ok{color:var(--ok);font-weight:700}
+#sheet-status.warn{color:var(--accent);font-weight:700}
+a.btn{text-decoration:none}
 .notes{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:10px}
 .qa{display:flex;flex-direction:column;gap:6px;background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .qa .qq{font-weight:700}
@@ -197,6 +204,18 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
 <svg class="gear g2" viewBox="0 0 100 100" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M44 2h12l2 11a38 38 0 0 1 9 4l9-6 9 9-6 9a38 38 0 0 1 4 9l11 2v12l-11 2a38 38 0 0 1-4 9l6 9-9 9-9-6a38 38 0 0 1-9 4l-2 11H44l-2-11a38 38 0 0 1-9-4l-9 6-9-9 6-9a38 38 0 0 1-4-9L2 56V44l11-2a38 38 0 0 1 4-9l-6-9 9-9 9 6a38 38 0 0 1 9-4zM50 32a18 18 0 1 0 0 36 18 18 0 0 0 0-36z"/></svg>
 <div class="wrap" id="app"></div>
 <div class="toast" id="toast" role="status" hidden></div>
+<div class="sheet-bg" id="sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+    <h2 id="sheet-title">Claudeに送る文章</h2>
+    <p id="sheet-status"></p>
+    <textarea id="sheet-text" readonly aria-label="Claudeに送る文章"></textarea>
+    <div class="row">
+      <button class="btn ghost sm" id="sheet-copy" type="button">もう一度コピー</button>
+      <a class="btn primary" id="sheet-open" href="https://claude.ai/new" target="_blank" rel="noopener">Claudeを開く</a>
+      <button class="btn ghost sm" id="sheet-close" type="button">閉じる</button>
+    </div>
+  </div>
+</div>
 <script>
 (() => {
   const CATS = [
@@ -209,7 +228,7 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
-  const APP_VERSION = "v8";
+  const APP_VERSION = "v9";
 
   let pack = { days: [] }, basePack = { days: [] };
   let remoteNotes = [];
@@ -422,10 +441,35 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
   // ---------- asking Claude (free: copy + open the Claude app) ----------
   const CLAUDE_URL = "https://claude.ai/new";
   const online = () => navigator.onLine;
+  // Copy synchronously inside the tap (works on iPhone), then show a sheet with the text and a real link to Claude.
+  function copySync(text) {
+    let ok = false;
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly", "");
+    ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;font-size:16px";
+    document.body.appendChild(ta);
+    const range = document.createRange(); range.selectNodeContents(ta);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    ta.setSelectionRange(0, text.length);
+    try { ok = document.execCommand("copy"); } catch (_) {}
+    sel.removeAllRanges(); ta.remove();
+    return ok;
+  }
   function openClaude(text, msg) {
-    try { navigator.clipboard.writeText(text).catch(() => {}); } catch (_) {}
-    toast(msg || "コピーしました。Claudeで貼り付けて送ってください");
-    window.open(CLAUDE_URL, "_blank", "noopener");
+    const sheet = document.getElementById("sheet");
+    const status = document.getElementById("sheet-status");
+    const box = document.getElementById("sheet-text");
+    box.value = text;
+    const setStatus = (good) => {
+      status.textContent = good ? (msg || "コピーしました。Claudeを開いて、入力欄に貼り付けて送ってください。")
+        : "自動でコピーできませんでした。下の文章を長押しして「すべてを選択」→「コピー」してから、Claudeを開いてください。";
+      status.className = good ? "ok" : "warn";
+    };
+    status.textContent = "コピーしています…"; status.className = "";
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => setStatus(true)).catch(() => setStatus(copySync(text)));
+    } else setStatus(copySync(text));
+    sheet.hidden = false;
   }
   function askText(d, i, question) {
     const dd = dayOf(d), q = dd && dd.questions[i];
@@ -577,7 +621,7 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
     return h("section", { class: "card" },
       h("div", { class: "section-head" }, h("h2", null, "問題を追加する"), h("span", { class: "small muted" }, `残り ${left}日分`)),
       h("ol", { class: "steps small" },
-        h("li", null, "「Claudeに問題を頼む」を押すと、頼む文章がコピーされてClaudeが開きます。貼り付けて送ってください。"),
+        h("li", null, "「Claudeに問題を頼む」を押すと、頼む文章がコピーされます。「Claudeを開く」でClaudeを開き、貼り付けて送ってください。"),
         h("li", null, "Claudeの返事のコードブロックをコピーします（右上のコピーボタン）。"),
         h("li", null, "下に貼って「取り込む」を押すと、3日分が追加されます。")),
       h("div", { class: "row" }, h("button", { class: "btn " + (left <= 1 ? "primary" : "ghost"), disabled: !online(), onclick: () => openClaude(requestText(), "頼む文章をコピーしました。Claudeで貼り付けて送ってください") }, "Claudeに問題を頼む")),
@@ -753,6 +797,18 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
     } catch (_) {}
     mergePack();
   }
+  document.getElementById("sheet-close").addEventListener("click", () => { document.getElementById("sheet").hidden = true; });
+  document.getElementById("sheet-open").addEventListener("click", () => { setTimeout(() => { document.getElementById("sheet").hidden = true; }, 300); });
+  document.getElementById("sheet-copy").addEventListener("click", () => {
+    const box = document.getElementById("sheet-text"), st = document.getElementById("sheet-status");
+    const show = (ok) => {
+      st.textContent = ok ? "コピーしました。Claudeを開いて貼り付けてください。" : "コピーできませんでした。文章を長押しして選択してコピーしてください。";
+      st.className = ok ? "ok" : "warn";
+      if (!ok) { box.focus(); box.select(); }
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(box.value).then(() => show(true)).catch(() => show(copySync(box.value)));
+    else show(copySync(box.value));
+  });
   load();
   app.append(h("p", { class: "muted" }, "読み込んでいます…"));
   loadPack().then(render);

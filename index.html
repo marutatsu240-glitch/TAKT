@@ -171,6 +171,11 @@ body{
 .pip.on{background:var(--accent)}
 .toast{background:var(--accent);color:var(--accent-ink)}
 textarea,.askbox input{background:#0f1418}
+.notes{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:10px}
+.qa{display:flex;flex-direction:column;gap:6px;background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.qa .qq{font-weight:700}
+.qa .qq::before{content:"Q. ";font-family:var(--f-mono);color:var(--accent)}
+.askbox textarea{min-height:8em;font:inherit;font-size:16px}
 </style>
 </head>
 <body>
@@ -190,9 +195,11 @@ textarea,.askbox input{background:#0f1418}
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
-  const APP_VERSION = "v5";
+  const APP_VERSION = "v6";
 
   let pack = { days: [] };
+  let remoteNotes = [];
+  const pasteOpen = new Set();
   let rec = { days: {} };
   let view = "home", cur = null, detailDay = null;
   const openDeep = new Set();
@@ -407,7 +414,8 @@ textarea,.askbox input{background:#0f1418}
   function askText(d, i, question) {
     const dd = dayOf(d), q = dd && dd.questions[i];
     if (!q) return question || "";
-    return `TAKT（生産技術トレーニング）Day${d} の問題について質問です。\n\n問題：${q.prompt}\n${q.options.map((o, k) => `${KEYS[k]}. ${o}`).join("\n")}\n正解：${KEYS[q.answer]}\n解説：${q.explanation}\n\n質問：${question || "この問題をもう少しわかりやすく教えてください。"}`;
+    const qq = question || "この問題をもう少しわかりやすく教えてください。";
+    return `TAKT（生産技術トレーニング）Day${d} Q${i + 1} の問題について質問です。\n\n問題：${q.prompt}\n${q.options.map((o, k) => `${KEYS[k]}. ${o}`).join("\n")}\n正解：${KEYS[q.answer]}\n解説：${q.explanation}\n\n質問：${qq}\n\n（答えたら、この質問とあなたの回答を GitHub の ${REPO} リポジトリの data/notes.json の notes 配列の末尾に {"day": ${d}, "i": ${i}, "question": 質問文, "answer": 回答文, "at": 日時(ISO形式)} の形で追記して、main に push してください。answer は見出しに「■」を使ったプレーンテキストにしてください。このあと同じ会話で追加の質問をしたら、それも同じように追記してください。）`;
   }
   function saveLater(d, i, question) {
     rec.ask = rec.ask || [];
@@ -426,13 +434,51 @@ textarea,.askbox input{background:#0f1418}
       online() ? null : h("p", { class: "small muted" }, "オフラインです。「あとで聞く」に入れておくと、電波があるときにホームから聞けます。"));
   }
 
+  function notesFor(d, i) {
+    const r1 = remoteNotes.filter(n => +n.day === d && +n.i === i).map(n => ({ ...n, src: "claude" }));
+    const r2 = (rec.notes || []).map((n, k) => ({ ...n, src: "local", k })).filter(n => n.day === d && n.i === i);
+    return [...r1, ...r2].sort((a, b) => String(a.at || "").localeCompare(String(b.at || "")));
+  }
+  function notesBlock(d, i) {
+    const list = notesFor(d, i);
+    if (!list.length) return null;
+    return h("div", { class: "notes" },
+      h("p", { class: "label" }, `Claudeとの会話（${list.length}）`),
+      list.map(n => h("div", { class: "qa" },
+        h("p", { class: "qq" }, n.question || "（質問）"),
+        ...richText(n.answer),
+        h("div", { class: "row", style: "align-items:center" },
+          h("span", { class: "small muted" }, (n.src === "claude" ? "Claudeが保存" : "貼り付けて保存") + (n.at ? `・${String(n.at).slice(0, 10)}` : "")),
+          n.src === "local" ? h("button", { class: "btn ghost sm", onclick: () => { rec.notes.splice(n.k, 1); persist(); render(); } }, "消す") : null))));
+  }
+  function pasteBlock(d, i) {
+    const key = `${d}-${i}`, qid = `pq-${key}`, aid = `pa-${key}`;
+    if (!pasteOpen.has(key)) return h("button", { class: "btn ghost sm", onclick: () => { pasteOpen.add(key); render(); } }, "Claudeの回答を貼って残す");
+    return h("div", { class: "askbox" },
+      h("input", { id: qid, type: "text", placeholder: "聞いたこと（例：潜熱ってなに？）", "aria-label": "聞いた質問" }),
+      h("textarea", { id: aid, placeholder: "Claudeの回答を貼り付け", "aria-label": "Claudeの回答", autocorrect: "off", spellcheck: "false" }),
+      h("div", { class: "row" },
+        h("button", { class: "btn primary sm", onclick: () => {
+          const qv = document.getElementById(qid).value.trim(), av = document.getElementById(aid).value.trim();
+          if (!av) { toast("回答を貼り付けてください"); return; }
+          rec.notes = rec.notes || [];
+          rec.notes.push({ day: d, i, question: qv, answer: av, at: new Date().toISOString() });
+          persist(); pasteOpen.delete(key);
+          document.getElementById(qid).value = ""; document.getElementById(aid).value = "";
+          toast("会話を残しました"); render();
+        } }, "残す"),
+        h("button", { class: "btn ghost sm", onclick: () => { pasteOpen.delete(key); render(); } }, "やめる")));
+  }
+
   function deepBlock(d, i, q) {
     const key = `${d}-${i}`, open = openDeep.has(key);
     const box = h("div", { class: "deep" });
     if (open) box.append(...richText(q.deep));
     if (q.deep) box.append(h("div", { class: "row" },
       h("button", { class: "btn ghost sm", onclick: () => { open ? openDeep.delete(key) : openDeep.add(key); render(); } }, open ? "詳しい解説を閉じる" : "詳しい解説を見る")));
+    const nb = notesBlock(d, i); if (nb) box.append(nb);
     box.append(askBlock(d, i));
+    box.append(h("div", { class: "row" }, pasteBlock(d, i)));
     return box;
   }
 
@@ -561,6 +607,11 @@ textarea,.askbox input{background:#0f1418}
         p.days = p.days.filter(d => !d.removed).map(d => ({ ...d, questions: d.questions }));
         pack = p;
       }
+    } catch (_) {}
+    try {
+      const res = await fetch("data/notes.json", { cache: "no-store" });
+      const n = await res.json();
+      if (n && Array.isArray(n.notes)) remoteNotes = n.notes;
     } catch (_) {}
   }
   load();

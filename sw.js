@@ -1,5 +1,5 @@
 // TAKT service worker: app shell cache-first, question pack network-first.
-const SHELL = "takt-shell-v5";
+const SHELL = "takt-shell-v6";
 const DATA = "takt-data";
 const SHELL_FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 
@@ -8,7 +8,9 @@ self.addEventListener("install", (e) => {
     const c = await caches.open(SHELL);
     await c.addAll(SHELL_FILES);
     const d = await caches.open(DATA);
-    try { await d.add("data/pack.json"); } catch (_) {}
+    for (const f of ["data/pack.json", "data/notes.json"]) {
+      try { const res = await fetch(f, { cache: "no-store" }); if (res.ok) await d.put(new URL(f, self.registration.scope).pathname, res); } catch (_) {}
+    }
     self.skipWaiting();
   })());
 });
@@ -24,19 +26,20 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== location.origin) return;
 
-  if (url.pathname.endsWith("/data/pack.json")) {
+  if (url.pathname.includes("/data/")) {
     e.respondWith((async () => {
       const d = await caches.open(DATA);
+      const key = url.pathname;
       try {
         const ctl = new AbortController();
         const t = setTimeout(() => ctl.abort(), 4000);
         const res = await fetch(e.request, { cache: "no-store", signal: ctl.signal });
         clearTimeout(t);
-        if (res.ok) { await d.put("data/pack.json", res.clone()); return res; }
+        if (res.ok) { await d.put(key, res.clone()); return res; }
         throw new Error("bad status");
       } catch (_) {
-        const hit = await d.match("data/pack.json");
-        return hit || new Response('{"days":[]}', { headers: { "Content-Type": "application/json" } });
+        const hit = await d.match(key) || (key.endsWith("pack.json") ? await d.match("data/pack.json") : null);
+        return hit || new Response("{}", { headers: { "Content-Type": "application/json" } });
       }
     })());
     return;

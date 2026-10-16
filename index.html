@@ -171,6 +171,19 @@ body{
 .pip.on{background:var(--accent)}
 .toast{background:var(--accent);color:var(--accent-ink)}
 textarea,.askbox input{background:#0f1418}
+button.field{appearance:none;-webkit-appearance:none;background:none;border:0;color:inherit;font:inherit;text-align:left;padding:2px 0;cursor:pointer;width:100%}
+.tabs{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.tab{appearance:none;-webkit-appearance:none;font:700 .85rem var(--f-body);color:var(--muted);background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:10px 4px;display:flex;align-items:center;justify-content:center;gap:5px;cursor:pointer}
+.tab.on{color:var(--ink);border-color:var(--c);box-shadow:inset 0 -3px 0 var(--c)}
+.tabn{font-family:var(--f-mono);font-size:.75rem;color:var(--muted)}
+.fieldsum{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:.88rem}
+.chk{display:inline-flex;align-items:center;gap:6px;margin-left:auto}
+.chk input{width:18px;height:18px;accent-color:var(--accent)}
+.note{gap:8px}
+.notehead{appearance:none;-webkit-appearance:none;background:none;border:0;color:inherit;font:inherit;display:flex;align-items:center;gap:10px;padding:0;cursor:pointer;text-align:left}
+.chev{margin-left:auto;font-family:var(--f-mono);color:var(--accent);font-size:1.1rem}
+.ans{font-weight:700;color:var(--ok)}
+.ans .label{margin-right:4px}
 .notes{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:10px}
 .qa{display:flex;flex-direction:column;gap:6px;background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .qa .qq{font-weight:700}
@@ -195,13 +208,15 @@ textarea,.askbox input{background:#0f1418}
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
-  const APP_VERSION = "v6";
+  const APP_VERSION = "v7";
 
   let pack = { days: [] };
   let remoteNotes = [];
   const pasteOpen = new Set();
   let rec = { days: {} };
   let view = "home", cur = null, detailDay = null;
+  let fieldSel = CATS[0].key, fieldWrongOnly = false;
+  const openNote = new Set();
   const openDeep = new Set();
   const app = document.getElementById("app");
 
@@ -352,10 +367,10 @@ textarea,.askbox input{background:#0f1418}
     nodes.push(requestCard(left));
 
     nodes.push(h("section", { class: "section" },
-      h("div", { class: "section-head" }, h("h2", null, "分野別の正答率")),
+      h("div", { class: "section-head" }, h("h2", null, "分野別の正答率"), h("button", { class: "btn ghost sm", onclick: () => go("fields") }, "分野別ノートを開く")),
       h("div", { class: "fields" }, CATS.map(c => {
         const p = st.per.get(c.key), pct = p.n ? Math.round(p.ok / p.n * 100) : 0;
-        return h("div", { class: "field", style: `--c:var(${c.c})` },
+        return h("button", { class: "field", style: `--c:var(${c.c})`, onclick: () => { fieldSel = c.key; go("fields"); }, "aria-label": `${c.key}のノートを開く` },
           h("span", { class: "name" }, h("span", { class: "dot" }), c.short),
           h("div", { class: "track", role: "img", "aria-label": `${c.key} 正答率 ${p.n ? pct + "%" : "記録なし"}` }, h("div", { class: "fill", style: `width:${pct}%` })),
           h("span", { class: "pct" }, p.n ? `${pct}% · ${p.ok}/${p.n}` : "—"));
@@ -590,8 +605,58 @@ textarea,.askbox input{background:#0f1418}
     return nodes;
   }
 
+
+  // ---------- field notebook ----------
+  function solvedByField(catKey) {
+    const out = [];
+    for (const d of pack.days) {
+      const rr = rec.days[d.day];
+      if (!rr) continue;
+      d.questions.forEach((q, i) => {
+        if (catOf(q.category).key !== catKey) return;
+        const a = answered(d.day, i);
+        if (!a && !rr.done) return;
+        out.push({ d, i, q, a, good: right(d, i), reviewed: !!rr.reviewedOk[i] });
+      });
+    }
+    return out;
+  }
+  function viewFields() {
+    const nodes = [
+      h("div", { class: "qbar" }, h("button", { class: "back", onclick: () => go("home") }, "← ホームへ"), h("span", { class: "dayno" }, "FIELD NOTES")),
+      h("div", { class: "dhead" }, h("h1", null, "分野別ノート"), h("p", { class: "small muted" }, "解いた問題が分野ごとに自動でたまっていきます。")),
+    ];
+    nodes.push(h("div", { class: "tabs", role: "tablist" }, CATS.map(c => {
+      const n = solvedByField(c.key).length;
+      return h("button", { class: "tab" + (fieldSel === c.key ? " on" : ""), role: "tab", "aria-selected": fieldSel === c.key ? "true" : "false", style: `--c:var(${c.c})`, onclick: () => { fieldSel = c.key; render(); } },
+        h("span", { class: "dot" }), c.short, h("span", { class: "tabn" }, n));
+    })));
+    const all = solvedByField(fieldSel);
+    const wrong = all.filter(x => x.a && !x.good);
+    const okN = all.filter(x => x.good).length, ansN = all.filter(x => x.a).length;
+    nodes.push(h("div", { class: "fieldsum" },
+      h("span", null, `${all.length}問`),
+      h("span", { class: "muted" }, ansN ? `正答率 ${Math.round(okN / ansN * 100)}%（${okN}/${ansN}）` : "解答の記録なし"),
+      h("label", { class: "chk" }, h("input", { type: "checkbox", id: "wrongonly", checked: fieldWrongOnly ? true : null, onchange: (e) => { fieldWrongOnly = e.target.checked; render(); } }), `間違えた問題だけ（${wrong.length}）`)));
+    const list = fieldWrongOnly ? wrong : all;
+    if (!list.length) nodes.push(h("p", { class: "empty card" }, fieldWrongOnly ? "間違えた問題はありません。" : "この分野の問題はまだ解いていません。"));
+    list.slice().reverse().forEach(x => {
+      const { d, i, q } = x, key = `${d.day}-${i}`, open = openNote.has(key), nn = notesFor(d.day, i).length;
+      const status = !x.a ? h("span", { class: "small muted" }, "解答なし") : x.good ? h("span", { class: "mark-ok small" }, "○") : h("span", { class: "mark-ng small" }, x.reviewed ? "×→復習で○" : "×");
+      const card = h("article", { class: "card note" },
+        h("button", { class: "notehead", onclick: () => { open ? openNote.delete(key) : openNote.add(key); render(); }, "aria-expanded": open ? "true" : "false" },
+          h("span", { class: "dayno" }, `Day${d.day} Q${i + 1}`), status, nn ? h("span", { class: "small muted" }, `会話${nn}`) : null, h("span", { class: "chev" }, open ? "－" : "＋")),
+        h("p", { class: "prompt" }, q.prompt),
+        h("p", { class: "ans" }, h("span", { class: "label" }, "正解 "), q.options[q.answer]),
+        q.keyPoints && q.keyPoints.length ? h("ul", { class: "kp" }, q.keyPoints.map(k => h("li", null, k))) : null);
+      if (open) card.append(h("div", { class: "fb" }, h("p", null, q.explanation), q.detail ? h("p", { class: "small" }, q.detail) : null, deepBlock(d.day, i, q)));
+      nodes.push(card);
+    });
+    return nodes;
+  }
+
   function render() {
-    const nodes = view === "quiz" && cur ? viewQuiz() : view === "result" && cur ? viewResult() : view === "detail" ? viewDetail() : (view = "home", viewHome());
+    const nodes = view === "quiz" && cur ? viewQuiz() : view === "result" && cur ? viewResult() : view === "detail" ? viewDetail() : view === "fields" ? viewFields() : (view = "home", viewHome());
     const kept = {};
     app.querySelectorAll("input[id],textarea[id]").forEach(el => { if (el.value) kept[el.id] = el.value; });
     app.replaceChildren(...nodes);

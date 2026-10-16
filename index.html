@@ -396,7 +396,7 @@ details summary{cursor:pointer;font-weight:700}
   }
 
   // ---------- requesting new days (free: ask in Claude chat) ----------
-  const REPO = "marutatsu240-glitch/takt";
+  const REPO = "marutatsu240-glitch/TAKT";
   function requestText() {
     const st = stats(), last = pack.days.length ? pack.days[pack.days.length - 1].day : 0;
     const weak = CATS.map(c => { const p = st.per.get(c.key); return `${c.key} ${p.n ? Math.round(p.ok / p.n * 100) + "%（" + p.ok + "/" + p.n + "）" : "記録なし"}`; }).join("、");

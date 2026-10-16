@@ -241,7 +241,7 @@ a.btn{text-decoration:none}
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
-  const APP_VERSION = "v10";
+  const APP_VERSION = "v11";
 
   let pack = { days: [] }, basePack = { days: [] }, syl = { topics: [] };
   let remoteNotes = [];
@@ -587,7 +587,8 @@ a.btn{text-decoration:none}
   }
   function planTopics(days) {
     const cov = coverage(), st = stats();
-    const left = new Map(CATS.map(c => [c.key, syl.topics.filter(t => t.field === c.key && !cov.has(t.id))]));
+    const ord = new Map(syl.topics.map((t, k) => [t.id, k]));
+    const left = new Map(CATS.map(c => [c.key, syl.topics.filter(t => t.field === c.key && !cov.has(t.id)).sort((a, b) => (a.stage - b.stage) || (ord.get(a.id) - ord.get(b.id)))]));
     const total = [...left.values()].reduce((n, l) => n + l.length, 0);
     const acc = (k) => { const p = st.per.get(k); return p && p.n ? p.ok / p.n : 1.01; };
     const plan = [];

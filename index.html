@@ -149,6 +149,7 @@ details summary{cursor:pointer;font-weight:700}
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
+  const APP_VERSION = "v4";
 
   let pack = { days: [] };
   let rec = { days: {} };
@@ -287,6 +288,17 @@ details summary{cursor:pointer;font-weight:700}
         st.pending ? h("div", { class: "row" }, h("button", { class: "btn ghost", onclick: startReview }, `間違えた問題を復習（${st.pending}）`)) : null);
     }
     nodes.push(action);
+    if (!(rec.migrated) && !rec.days[3]) nodes.push(h("section", { class: "card" },
+      h("h2", null, "これまでの記録を入れる"),
+      h("p", { class: "small muted" }, "claude.ai版で解いたDay1〜3の記録をこのアプリに入れます（Day1・2は解答なしで完了、Day3は4問中3問正解）。"),
+      h("div", { class: "row" },
+        h("button", { class: "btn primary", onclick: () => {
+          rec.days["1"] = { chosen: [], reviewedOk: [], done: true, date: "2026-10-15" };
+          rec.days["2"] = { chosen: [], reviewedOk: [], done: true, date: "2026-10-15" };
+          rec.days["3"] = { chosen: [3, 2, 3, 2], reviewedOk: [], done: true, date: "2026-10-16" };
+          rec.migrated = true; persist(); toast("記録を入れました"); render();
+        } }, "記録を入れる"),
+        h("button", { class: "btn ghost", onclick: () => { rec.migrated = true; persist(); render(); } }, "入れない"))));
     const later = laterCard(); if (later) nodes.push(later);
     const left = pack.days.filter(d => !(rec.days[d.day] && rec.days[d.day].done)).length;
     nodes.push(requestCard(left));
@@ -314,7 +326,7 @@ details summary{cursor:pointer;font-weight:700}
       }) : h("div", { class: "empty" }, "まだ記録はありません。上の「解きはじめる」から Day 1 をはじめると、ここに日ごとの結果がたまっていきます。"))));
 
     nodes.push(viewBackup());
-    nodes.push(h("p", { class: "foot" }, `問題 ${pack.days.length}日分（${pack.updated || ""} 更新）。記録はこのiPhoneの中だけに保存されます。`));
+    nodes.push(h("p", { class: "foot" }, `TAKT ${APP_VERSION}・問題 ${pack.days.length}日分（${pack.updated || ""} 更新）。記録はこのiPhoneの中だけに保存されます。`));
     return nodes;
   }
 

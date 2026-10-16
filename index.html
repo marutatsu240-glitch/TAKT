@@ -241,7 +241,7 @@ a.btn{text-decoration:none}
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
-  const APP_VERSION = "v11";
+  const APP_VERSION = "v12";
 
   let pack = { days: [] }, basePack = { days: [] }, syl = { topics: [] };
   let remoteNotes = [];
@@ -585,52 +585,71 @@ a.btn{text-decoration:none}
     });
     return covered;
   }
+  const STAGE = { 1: "基礎", 2: "工場実務", 3: "本部・応用", 4: "発展" };
+  function topicHistory() {
+    const hist = new Map();   // topic -> {prompts:[], firstDay, wrong}
+    for (const d of pack.days) d.questions.forEach((q, i) => {
+      if (!q.topic) return;
+      const x = hist.get(q.topic) || { prompts: [], firstDay: d.day, lastDay: d.day, wrong: 0 };
+      x.prompts.push(q.prompt); x.lastDay = d.day;
+      if (answered(d.day, i) && !right(d, i) && !(rec.days[d.day] && rec.days[d.day].reviewedOk[i])) x.wrong++;
+      hist.set(q.topic, x);
+    });
+    return hist;
+  }
   function planTopics(days) {
-    const cov = coverage(), st = stats();
+    const cov = coverage(), st = stats(), hist = topicHistory();
     const ord = new Map(syl.topics.map((t, k) => [t.id, k]));
-    const left = new Map(CATS.map(c => [c.key, syl.topics.filter(t => t.field === c.key && !cov.has(t.id)).sort((a, b) => (a.stage - b.stage) || (ord.get(a.id) - ord.get(b.id)))]));
-    const total = [...left.values()].reduce((n, l) => n + l.length, 0);
+    const byField = (pred) => new Map(CATS.map(c => [c.key, syl.topics.filter(t => t.field === c.key && pred(t)).sort((a, b) => (a.stage - b.stage) || (ord.get(a.id) - ord.get(b.id)))]));
+    const coreLeft = byField(t => t.stage < 4 && !cov.has(t.id));
+    const extLeft = byField(t => t.stage === 4 && !cov.has(t.id));
+    const count = (m) => [...m.values()].reduce((n, l) => n + l.length, 0);
     const acc = (k) => { const p = st.per.get(k); return p && p.n ? p.ok / p.n : 1.01; };
-    const plan = [];
-    if (total === 0) {
-      // second round: topics answered wrong first, then least practiced
-      const pool = syl.topics.map(t => ({ t, c: cov.get(t.id) || { asked: 0, ok: 0 } }))
-        .sort((a, b) => (a.c.ok / Math.max(a.c.asked, 1)) - (b.c.ok / Math.max(b.c.asked, 1)) || a.c.asked - b.c.asked);
-      for (let d = 0; d < days; d++) plan.push(pool.slice(d * 5, d * 5 + 5).map(x => x.t));
-      return { plan, round2: true, total };
-    }
     const order = CATS.map(c => c.key);
-    for (let d = 0; d < days; d++) {
-      const day = [];
-      for (const k of order) { const l = left.get(k); if (l.length) day.push(l.shift()); }
+    const takeBalanced = (left, n) => {
+      const out = [];
       const byWeak = [...order].sort((a, b) => acc(a) - acc(b) || left.get(b).length - left.get(a).length);
-      while (day.length < 5) {
-        const k = byWeak.find(k => left.get(k).length);
-        if (!k) break;
-        day.push(left.get(k).shift());
-      }
+      for (const k of order) { if (out.length >= n) break; const l = left.get(k); if (l.length) out.push(l.shift()); }
+      while (out.length < n) { const k = byWeak.find(k => left.get(k).length); if (!k) break; out.push(left.get(k).shift()); }
+      return out;
+    };
+    // review ranking: still-wrong first, then low accuracy, then least practiced, then longest ago
+    const reviewPool = syl.topics.filter(t => cov.has(t.id)).map(t => {
+      const c = cov.get(t.id), hh = hist.get(t.id) || { wrong: 0, lastDay: 0, prompts: [] };
+      return { t, wrong: hh.wrong, rate: c.ans ? c.ok / c.ans : 0.5, asked: c.asked, last: hh.lastDay, prompts: hh.prompts };
+    }).sort((a, b) => (b.wrong > 0) - (a.wrong > 0) || a.rate - b.rate || a.asked - b.asked || a.last - b.last);
+    let rp = 0;
+    const takeReview = (n) => reviewPool.slice(rp, rp += n).map(x => ({ t: x.t, kind: "review", prev: x.prompts }));
+    const plan = [];
+    let mode = "core";
+    for (let d = 0; d < days; d++) {
+      let day;
+      if (count(coreLeft)) day = takeBalanced(coreLeft, 5).map(t => ({ t, kind: "new" }));
+      else if (count(extLeft)) { mode = "expand"; day = [...takeBalanced(extLeft, 3).map(t => ({ t, kind: "new" })), ...takeReview(2)]; }
+      else { mode = "review"; day = takeReview(5); }
+      if (day.length < 5) day = [...day, ...takeReview(5 - day.length)];
       if (day.length) plan.push(day);
     }
-    return { plan, round2: false, total };
+    return { plan, mode, core: count(coreLeft), ext: count(extLeft) };
   }
   function requestText() {
     const st = stats(), from = lastDay() + 1;
     const weak = CATS.map(c => { const p = st.per.get(c.key); return `${c.key} ${p.n ? Math.round(p.ok / p.n * 100) + "%（" + p.ok + "/" + p.n + "）" : "記録なし"}`; }).join("、");
-    const { plan, round2 } = planTopics(3);
-    const stageName = { 1: "基礎", 2: "工場実務", 3: "本部・応用" };
-    const lines = plan.map((day, k) => `Day${from + k}：` + day.map(t => `${t.id} ${t.title}［${t.field}・${stageName[t.stage]}］`).join(" / "));
+    const { plan, mode } = planTopics(3);
+    const lines = plan.map((day, k) => `Day${from + k}：\n` + day.map(x => `  ${x.kind === "review" ? "［復習・発展］" : "［新規］"}${x.t.id} ${x.t.title}（${x.t.field}・${STAGE[x.t.stage]}）` +
+      (x.kind === "review" && x.prev && x.prev.length ? `\n    前に出した問題：${x.prev.map(p => "「" + p.slice(0, 40) + (p.length > 40 ? "…" : "") + "」").join(" ")}` : "")).join("\n"));
     return [
       `TAKT（食品メーカーの生産技術トレーニングアプリ）の問題を、Day${from}〜Day${from + plan.length - 1} の${plan.length}日分作ってください。`,
       "",
       "【読み手】カルビーの生産技術職に入る新人。物理は高校レベルから学び直し中。",
-      round2
-        ? "【出題範囲】カリキュラムは一通り出題済みです。今回は2周目として、下のトピックで前回より一段深い応用問題を作ってください（同じ内容の焼き直しにしない）。"
-        : "【出題範囲】カリキュラムでまだ出題していないトピックです。下の各トピックについて1問ずつ作ってください。トピックの範囲から外れないこと。",
+      mode === "core"
+        ? "【出題範囲】カリキュラムでまだ出題していない項目です。下の各項目について1問ずつ作ってください。項目の範囲から外れないこと。"
+        : "【出題範囲】下の各項目について1問ずつ作ってください。［新規］はまだ出題していない項目です。［復習・発展］は以前に出した項目なので、前に出した問題とは別の角度・別の場面で、一段深い問題にしてください（同じ問題の焼き直しにしない）。",
       ...lines,
       `【今の正答率】${weak}`,
       "",
       "【守ること】",
-      "- 4択で正解は1つ。誤答は「よくある勘違い」で作る。［基礎］は高校〜大学1年レベル、［工場実務］は工場1〜3年目、［本部・応用］は設備投資やライン設計の判断レベル。",
+      "- 4択で正解は1つ。誤答は「よくある勘違い」で作る。（基礎）は高校〜大学1年レベル、（工場実務）は工場1〜3年目、（本部・応用）は設備投資やライン設計の判断レベル、（発展）は幅を広げる周辺知識。",
       "- できるだけポテトチップスなどスナック菓子の工場の場面で出題する。",
       "- 数値・基準・法令は確かなものだけ。できればWebで裏を取る。計算問題は必ず自分で解いて、正解の選択肢と一致することを確かめる。",
       "- topic にはトピックのID（例 P04）を入れる。answer は正解の選択肢の番号（0始まり）、answerText は正解の選択肢の文字列をそのまま。",
@@ -683,9 +702,18 @@ a.btn{text-decoration:none}
     const ta = h("textarea", { id: "importbox", placeholder: "Claudeの返事（JSONのコードブロック）をここに貼り付け", "aria-label": "Claudeの返事", autocomplete: "off", autocorrect: "off", autocapitalize: "off", spellcheck: "false" });
     return h("section", { class: "card" },
       h("div", { class: "section-head" }, h("h2", null, "問題を追加する"), h("span", { class: "small muted" }, `残り ${left}日分`)),
-      syl.topics.length ? (() => { const n = coverage().size, T = syl.topics.length; return h("div", { class: "cov" },
-        h("div", { class: "covbar", role: "img", "aria-label": `カリキュラム ${n}/${T} 項目出題済み` }, h("div", { style: `width:${Math.round(n / T * 100)}%` })),
-        h("span", { class: "small muted" }, n < T ? `カリキュラム ${n}/${T} 項目。次は未出題の項目から順に頼みます` : `カリキュラム ${T}項目を一通り出題済み。次は2周目（応用）を頼みます`)); })() : null,
+      syl.topics.length ? (() => {
+        const cov = coverage(), core = syl.topics.filter(t => t.stage < 4), ext = syl.topics.filter(t => t.stage === 4);
+        const n = core.filter(t => cov.has(t.id)).length, T = core.length, e = ext.filter(t => cov.has(t.id)).length;
+        const msg = n < T ? `基本カリキュラム ${n}/${T} 項目。次は未出題の項目から順に頼みます`
+          : e < ext.length ? `基本カリキュラムは一通り完了。次は復習2問＋発展項目3問（発展 ${e}/${ext.length}）で広げます`
+          : "すべての項目を出題済み。次は苦手な項目の復習・発展問題を頼みます";
+        return h("div", { class: "cov" },
+          h("div", { class: "covbar", role: "img", "aria-label": msg }, h("div", { style: `width:${Math.round((n < T ? n / T : 1) * 100)}%` })),
+          h("div", { class: "row", style: "align-items:center;justify-content:space-between" },
+            h("span", { class: "small muted" }, msg),
+            h("button", { class: "btn ghost sm", onclick: () => { CATS.forEach(c => openNote.add("curr-" + c.key)); go("fields"); } }, "カリキュラムを見る")));
+      })() : null,
       h("ol", { class: "steps small" },
         h("li", null, "「Claudeに問題を頼む」を押すと、頼む文章がコピーされます。「Claudeを開く」でClaudeを開き、貼り付けて送ってください。"),
         h("li", null, "Claudeの返事のコードブロックをコピーします（右上のコピーボタン）。"),
@@ -818,12 +846,11 @@ a.btn{text-decoration:none}
     const cov = coverage(), topics = syl.topics.filter(t => t.field === fieldSel);
     if (topics.length) {
       const asked = topics.filter(t => cov.has(t.id)).length;
-      const stageName = { 1: "基礎", 2: "工場実務", 3: "本部・応用" };
       nodes.push(h("details", { class: "card curr", open: openNote.has("curr-" + fieldSel) ? true : null, ontoggle: (e) => { e.target.open ? openNote.add("curr-" + fieldSel) : openNote.delete("curr-" + fieldSel); } },
         h("summary", null, `カリキュラム ${asked}/${topics.length} 項目`),
         h("div", { class: "covbar", style: `--c:var(${catOf(fieldSel).c})` }, h("div", { style: `width:${Math.round(asked / topics.length * 100)}%` })),
-        [1, 2, 3].map(sg => h("div", { class: "stage" },
-          h("p", { class: "label" }, stageName[sg]),
+        [1, 2, 3, 4].filter(sg => topics.some(t => t.stage === sg)).map(sg => h("div", { class: "stage" },
+          h("p", { class: "label" }, STAGE[sg]),
           h("ul", { class: "topics" }, topics.filter(t => t.stage === sg).map(t => {
             const c = cov.get(t.id);
             const mark = !c ? h("span", { class: "tmark" }, "未出題")

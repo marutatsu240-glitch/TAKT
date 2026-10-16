@@ -319,7 +319,7 @@ details summary{cursor:pointer;font-weight:700}
   }
 
   function viewBackup() {
-    const ta = h("textarea", { id: "restore", placeholder: "コピーしておいた記録をここに貼り付け", "aria-label": "記録の貼り付け" });
+    const ta = h("textarea", { id: "restore", placeholder: "コピーしておいた記録をここに貼り付け", "aria-label": "記録の貼り付け", autocomplete: "off", autocorrect: "off", autocapitalize: "off", spellcheck: "false" });
     return h("details", { class: "card" },
       h("summary", null, "記録のバックアップ"),
       h("p", { class: "small muted" }, "記録はこの端末のアプリの中にあります。機種変更やアプリを消す前に、記録をコピーしてメモなどに保存しておいてください。"),
@@ -327,7 +327,16 @@ details summary{cursor:pointer;font-weight:700}
       ta,
       h("div", { class: "row" }, h("button", { class: "btn ghost sm", onclick: () => {
         try {
-          const v = JSON.parse(ta.value);
+          let s = ta.value
+            .replace(/[“”„‟″‶＂]/g, '"')
+            .replace(/[‘’′＇]/g, "'")
+            .replace(/[｛]/g, "{").replace(/[｝]/g, "}")
+            .replace(/[［]/g, "[").replace(/[］]/g, "]")
+            .replace(/[：]/g, ":").replace(/[，]/g, ",")
+            .replace(/[ 　]/g, " ");
+          const a = s.indexOf("{"), b = s.lastIndexOf("}");
+          if (a < 0 || b < a) throw 0;
+          const v = JSON.parse(s.slice(a, b + 1));
           if (!v || typeof v !== "object" || !v.days) throw 0;
           rec = v; persist(); ta.value = ""; toast("記録を戻しました"); render();
         } catch (_) { toast("貼り付けた内容を読み取れませんでした"); }

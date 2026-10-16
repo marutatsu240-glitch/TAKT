@@ -1,5 +1,5 @@
 // TAKT service worker: app shell cache-first, question pack network-first.
-const SHELL = "takt-shell-v9";
+const SHELL = "takt-shell-v10";
 const DATA = "takt-data";
 const SHELL_FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 
@@ -8,7 +8,7 @@ self.addEventListener("install", (e) => {
     const c = await caches.open(SHELL);
     await c.addAll(SHELL_FILES);
     const d = await caches.open(DATA);
-    for (const f of ["data/pack.json", "data/notes.json"]) {
+    for (const f of ["data/pack.json", "data/notes.json", "data/syllabus.json"]) {
       try { const res = await fetch(f, { cache: "no-store" }); if (res.ok) await d.put(new URL(f, self.registration.scope).pathname, res); } catch (_) {}
     }
     self.skipWaiting();

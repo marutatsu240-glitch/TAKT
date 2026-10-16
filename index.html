@@ -192,6 +192,19 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
 #sheet-status.ok{color:var(--ok);font-weight:700}
 #sheet-status.warn{color:var(--accent);font-weight:700}
 a.btn{text-decoration:none}
+.cov{display:flex;flex-direction:column;gap:6px}
+.covbar{height:8px;border-radius:4px;background:#0f1418;box-shadow:inset 0 1px 2px rgba(0,0,0,.6);overflow:hidden}
+.covbar>div{height:100%;background:repeating-linear-gradient(-45deg,var(--c,var(--accent)) 0 6px,color-mix(in srgb,var(--c,var(--accent)) 70%,#000) 6px 12px)}
+.curr summary{font-weight:700}
+.stage{display:flex;flex-direction:column;gap:4px}
+.topics{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.topics li{display:grid;grid-template-columns:2.8em minmax(0,1fr) auto;gap:8px;align-items:center;font-size:.86rem;padding:3px 0;border-bottom:1px dashed var(--line)}
+.topics li.todo{color:var(--muted)}
+.tid{font-family:var(--f-mono);font-size:.75rem;color:var(--muted)}
+.tmark{font-size:.72rem;font-weight:700;color:var(--muted)}
+.tmark.on{color:var(--accent)}
+.tmark.ok{color:var(--ok)}
+.tmark.ng{color:var(--ng)}
 .notes{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:10px}
 .qa{display:flex;flex-direction:column;gap:6px;background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .qa .qq{font-weight:700}
@@ -228,9 +241,9 @@ a.btn{text-decoration:none}
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
-  const APP_VERSION = "v9";
+  const APP_VERSION = "v10";
 
-  let pack = { days: [] }, basePack = { days: [] };
+  let pack = { days: [] }, basePack = { days: [] }, syl = { topics: [] };
   let remoteNotes = [];
   const pasteOpen = new Set();
   let rec = { days: {} };
@@ -557,26 +570,73 @@ a.btn{text-decoration:none}
   // ---------- requesting new days (free: ask in Claude chat) ----------
   const REPO = "marutatsu240-glitch/TAKT";
   const lastDay = () => pack.days.reduce((m, d) => Math.max(m, d.day), 0);
+  // ---------- curriculum ----------
+  function coverage() {
+    const covered = new Map();   // topic -> {asked, solved, ok}
+    for (const d of pack.days) d.questions.forEach((q, i) => {
+      if (!q.topic) return;
+      const c = covered.get(q.topic) || { asked: 0, solved: 0, ans: 0, ok: 0 };
+      c.asked++;
+      const rr = rec.days[d.day];
+      if (answered(d.day, i) || (rr && rr.done)) c.solved++;
+      if (answered(d.day, i)) c.ans++;
+      if (right(d, i)) c.ok++;
+      covered.set(q.topic, c);
+    });
+    return covered;
+  }
+  function planTopics(days) {
+    const cov = coverage(), st = stats();
+    const left = new Map(CATS.map(c => [c.key, syl.topics.filter(t => t.field === c.key && !cov.has(t.id))]));
+    const total = [...left.values()].reduce((n, l) => n + l.length, 0);
+    const acc = (k) => { const p = st.per.get(k); return p && p.n ? p.ok / p.n : 1.01; };
+    const plan = [];
+    if (total === 0) {
+      // second round: topics answered wrong first, then least practiced
+      const pool = syl.topics.map(t => ({ t, c: cov.get(t.id) || { asked: 0, ok: 0 } }))
+        .sort((a, b) => (a.c.ok / Math.max(a.c.asked, 1)) - (b.c.ok / Math.max(b.c.asked, 1)) || a.c.asked - b.c.asked);
+      for (let d = 0; d < days; d++) plan.push(pool.slice(d * 5, d * 5 + 5).map(x => x.t));
+      return { plan, round2: true, total };
+    }
+    const order = CATS.map(c => c.key);
+    for (let d = 0; d < days; d++) {
+      const day = [];
+      for (const k of order) { const l = left.get(k); if (l.length) day.push(l.shift()); }
+      const byWeak = [...order].sort((a, b) => acc(a) - acc(b) || left.get(b).length - left.get(a).length);
+      while (day.length < 5) {
+        const k = byWeak.find(k => left.get(k).length);
+        if (!k) break;
+        day.push(left.get(k).shift());
+      }
+      if (day.length) plan.push(day);
+    }
+    return { plan, round2: false, total };
+  }
   function requestText() {
     const st = stats(), from = lastDay() + 1;
     const weak = CATS.map(c => { const p = st.per.get(c.key); return `${c.key} ${p.n ? Math.round(p.ok / p.n * 100) + "%（" + p.ok + "/" + p.n + "）" : "記録なし"}`; }).join("、");
-    const themes = pack.days.slice(-10).map(d => `Day${d.day} ${d.theme}`).join(" / ");
+    const { plan, round2 } = planTopics(3);
+    const stageName = { 1: "基礎", 2: "工場実務", 3: "本部・応用" };
+    const lines = plan.map((day, k) => `Day${from + k}：` + day.map(t => `${t.id} ${t.title}［${t.field}・${stageName[t.stage]}］`).join(" / "));
     return [
-      `TAKT（食品メーカーの生産技術トレーニングアプリ）の問題を、Day${from}〜Day${from + 2} の3日分（1日5問）作ってください。`,
+      `TAKT（食品メーカーの生産技術トレーニングアプリ）の問題を、Day${from}〜Day${from + plan.length - 1} の${plan.length}日分作ってください。`,
       "",
       "【読み手】カルビーの生産技術職に入る新人。物理は高校レベルから学び直し中。",
-      "【分野】物理・工学計算 / 食品プロセス / 設備・電気・制御 / 品質・改善手法。毎日4分野をすべて1問以上入れ、苦手な分野を少し多めにする。",
+      round2
+        ? "【出題範囲】カリキュラムは一通り出題済みです。今回は2周目として、下のトピックで前回より一段深い応用問題を作ってください（同じ内容の焼き直しにしない）。"
+        : "【出題範囲】カリキュラムでまだ出題していないトピックです。下の各トピックについて1問ずつ作ってください。トピックの範囲から外れないこと。",
+      ...lines,
       `【今の正答率】${weak}`,
-      `【最近のテーマ（重ならないように）】${themes}`,
       "",
       "【守ること】",
-      "- 4択で正解は1つ。誤答は「よくある勘違い」で作る。",
+      "- 4択で正解は1つ。誤答は「よくある勘違い」で作る。［基礎］は高校〜大学1年レベル、［工場実務］は工場1〜3年目、［本部・応用］は設備投資やライン設計の判断レベル。",
+      "- できるだけポテトチップスなどスナック菓子の工場の場面で出題する。",
       "- 数値・基準・法令は確かなものだけ。できればWebで裏を取る。計算問題は必ず自分で解いて、正解の選択肢と一致することを確かめる。",
-      "- answer は正解の選択肢の番号（0始まり）、answerText は正解の選択肢の文字列をそのまま。",
+      "- topic にはトピックのID（例 P04）を入れる。answer は正解の選択肢の番号（0始まり）、answerText は正解の選択肢の文字列をそのまま。",
       "- explanation は1〜2文、detail は3〜6文、deep は「■ 前提になる知識」「■ 仕組みと考え方（計算は途中式）」「■ ほかの選択肢がなぜ違うか」「■ 食品工場ではこう効く」「■ よくある勘違い」の見出しで400〜700字。keyPoints は2〜3個。",
       "",
       "【出力】説明の文章は書かず、次の形のJSONを1つのコードブロックだけで出してください。",
-      '{"days":[{"day":' + from + ',"theme":"20字程度","questions":[{"category":"物理・工学計算","prompt":"問題文","options":["A","B","C","D"],"answer":0,"answerText":"A","explanation":"…","detail":"…","deep":"■ 前提になる知識\\n…","keyPoints":["…","…"]}]}]}',
+      '{"days":[{"day":' + from + ',"theme":"その日の5問に共通するテーマ（20字程度）","questions":[{"topic":"P04","category":"物理・工学計算","prompt":"問題文","options":["A","B","C","D"],"answer":0,"answerText":"A","explanation":"…","detail":"…","deep":"■ 前提になる知識\\n…","keyPoints":["…","…"]}]}]}',
     ].join("\n");
   }
 
@@ -602,7 +662,9 @@ a.btn{text-decoration:none}
         let ans = Number(q.answer);
         if (q.answerText != null) { const k = opts.findIndex(o => o.trim() === String(q.answerText).trim()); if (k < 0) continue; ans = k; }
         if (!(ans >= 0 && ans < 4)) continue;
-        qs.push({ category: catOf(q.category).key === "その他" ? String(q.category || "その他") : catOf(q.category).key, prompt: String(q.prompt), options: opts, answer: ans,
+        const tp = q.topic ? String(q.topic).trim().toUpperCase() : "";
+        const tdef = syl.topics.find(t => t.id === tp);
+        qs.push({ topic: tp || undefined, category: tdef ? tdef.field : (catOf(q.category).key === "その他" ? String(q.category || "その他") : catOf(q.category).key), prompt: String(q.prompt), options: opts, answer: ans,
           explanation: String(q.explanation || ""), detail: String(q.detail || ""), deep: String(q.deep || ""), keyPoints: Array.isArray(q.keyPoints) ? q.keyPoints.map(String).slice(0, 4) : [] });
       }
       if (!qs.length) continue;
@@ -620,6 +682,9 @@ a.btn{text-decoration:none}
     const ta = h("textarea", { id: "importbox", placeholder: "Claudeの返事（JSONのコードブロック）をここに貼り付け", "aria-label": "Claudeの返事", autocomplete: "off", autocorrect: "off", autocapitalize: "off", spellcheck: "false" });
     return h("section", { class: "card" },
       h("div", { class: "section-head" }, h("h2", null, "問題を追加する"), h("span", { class: "small muted" }, `残り ${left}日分`)),
+      syl.topics.length ? (() => { const n = coverage().size, T = syl.topics.length; return h("div", { class: "cov" },
+        h("div", { class: "covbar", role: "img", "aria-label": `カリキュラム ${n}/${T} 項目出題済み` }, h("div", { style: `width:${Math.round(n / T * 100)}%` })),
+        h("span", { class: "small muted" }, n < T ? `カリキュラム ${n}/${T} 項目。次は未出題の項目から順に頼みます` : `カリキュラム ${T}項目を一通り出題済み。次は2周目（応用）を頼みます`)); })() : null,
       h("ol", { class: "steps small" },
         h("li", null, "「Claudeに問題を頼む」を押すと、頼む文章がコピーされます。「Claudeを開く」でClaudeを開き、貼り付けて送ってください。"),
         h("li", null, "Claudeの返事のコードブロックをコピーします（右上のコピーボタン）。"),
@@ -749,6 +814,26 @@ a.btn{text-decoration:none}
       h("span", null, `${all.length}問`),
       h("span", { class: "muted" }, ansN ? `正答率 ${Math.round(okN / ansN * 100)}%（${okN}/${ansN}）` : "解答の記録なし"),
       h("label", { class: "chk" }, h("input", { type: "checkbox", id: "wrongonly", checked: fieldWrongOnly ? true : null, onchange: (e) => { fieldWrongOnly = e.target.checked; render(); } }), `間違えた問題だけ（${wrong.length}）`)));
+    const cov = coverage(), topics = syl.topics.filter(t => t.field === fieldSel);
+    if (topics.length) {
+      const asked = topics.filter(t => cov.has(t.id)).length;
+      const stageName = { 1: "基礎", 2: "工場実務", 3: "本部・応用" };
+      nodes.push(h("details", { class: "card curr", open: openNote.has("curr-" + fieldSel) ? true : null, ontoggle: (e) => { e.target.open ? openNote.add("curr-" + fieldSel) : openNote.delete("curr-" + fieldSel); } },
+        h("summary", null, `カリキュラム ${asked}/${topics.length} 項目`),
+        h("div", { class: "covbar", style: `--c:var(${catOf(fieldSel).c})` }, h("div", { style: `width:${Math.round(asked / topics.length * 100)}%` })),
+        [1, 2, 3].map(sg => h("div", { class: "stage" },
+          h("p", { class: "label" }, stageName[sg]),
+          h("ul", { class: "topics" }, topics.filter(t => t.stage === sg).map(t => {
+            const c = cov.get(t.id);
+            const mark = !c ? h("span", { class: "tmark" }, "未出題")
+              : !c.solved ? h("span", { class: "tmark on" }, "出題済み")
+              : !c.ans ? h("span", { class: "tmark" }, "済")
+              : c.ok === c.ans ? h("span", { class: "tmark ok" }, "○")
+              : c.ok ? h("span", { class: "tmark on" }, `${c.ok}/${c.ans}`)
+              : h("span", { class: "tmark ng" }, "×");
+            return h("li", { class: c ? "" : "todo" }, h("span", { class: "tid" }, t.id), h("span", null, t.title), mark);
+          }))))));
+    }
     const list = fieldWrongOnly ? wrong : all;
     if (!list.length) nodes.push(h("p", { class: "empty card" }, fieldWrongOnly ? "間違えた問題はありません。" : "この分野の問題はまだ解いていません。"));
     list.slice().reverse().forEach(x => {
@@ -789,6 +874,11 @@ a.btn{text-decoration:none}
         p.days = p.days.filter(d => !d.removed);
         basePack = p;
       }
+    } catch (_) {}
+    try {
+      const res = await fetch("data/syllabus.json", { cache: "no-store" });
+      const y = await res.json();
+      if (y && Array.isArray(y.topics)) syl = y;
     } catch (_) {}
     try {
       const res = await fetch("data/notes.json", { cache: "no-store" });

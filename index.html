@@ -184,6 +184,7 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
 .chev{margin-left:auto;font-family:var(--f-mono);color:var(--accent);font-size:1.1rem}
 .ans{font-weight:700;color:var(--ok)}
 .ans .label{margin-right:4px}
+.steps{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:4px;color:var(--muted)}
 .notes{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:10px}
 .qa{display:flex;flex-direction:column;gap:6px;background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .qa .qq{font-weight:700}
@@ -208,9 +209,9 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
-  const APP_VERSION = "v7";
+  const APP_VERSION = "v8";
 
-  let pack = { days: [] };
+  let pack = { days: [] }, basePack = { days: [] };
   let remoteNotes = [];
   const pasteOpen = new Set();
   let rec = { days: {} };
@@ -430,7 +431,7 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
     const dd = dayOf(d), q = dd && dd.questions[i];
     if (!q) return question || "";
     const qq = question || "この問題をもう少しわかりやすく教えてください。";
-    return `TAKT（生産技術トレーニング）Day${d} Q${i + 1} の問題について質問です。\n\n問題：${q.prompt}\n${q.options.map((o, k) => `${KEYS[k]}. ${o}`).join("\n")}\n正解：${KEYS[q.answer]}\n解説：${q.explanation}\n\n質問：${qq}\n\n（答えたら、この質問とあなたの回答を GitHub の ${REPO} リポジトリの data/notes.json の notes 配列の末尾に {"day": ${d}, "i": ${i}, "question": 質問文, "answer": 回答文, "at": 日時(ISO形式)} の形で追記して、main に push してください。answer は見出しに「■」を使ったプレーンテキストにしてください。このあと同じ会話で追加の質問をしたら、それも同じように追記してください。）`;
+    return `TAKT（生産技術トレーニング）Day${d} Q${i + 1} の問題について質問です。\n\n問題：${q.prompt}\n${q.options.map((o, k) => `${KEYS[k]}. ${o}`).join("\n")}\n正解：${KEYS[q.answer]}\n解説：${q.explanation}\n\n質問：${qq}\n\n（もしGitHubに書き込める場合だけ：答えたら、この質問とあなたの回答を GitHub の ${REPO} リポジトリの data/notes.json の notes 配列の末尾に {"day": ${d}, "i": ${i}, "question": 質問文, "answer": 回答文, "at": 日時(ISO形式)} の形で追記して、main に push してください。answer は見出しに「■」を使ったプレーンテキストにしてください。このあと同じ会話で追加の質問をしたら、それも同じように追記してください。書き込めない場合は、この段落は気にせず答えだけでOKです。）`;
   }
   function saveLater(d, i, question) {
     rec.ask = rec.ask || [];
@@ -511,19 +512,85 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
 
   // ---------- requesting new days (free: ask in Claude chat) ----------
   const REPO = "marutatsu240-glitch/TAKT";
+  const lastDay = () => pack.days.reduce((m, d) => Math.max(m, d.day), 0);
   function requestText() {
-    const st = stats(), last = pack.days.length ? pack.days[pack.days.length - 1].day : 0;
+    const st = stats(), from = lastDay() + 1;
     const weak = CATS.map(c => { const p = st.per.get(c.key); return `${c.key} ${p.n ? Math.round(p.ok / p.n * 100) + "%（" + p.ok + "/" + p.n + "）" : "記録なし"}`; }).join("、");
     const themes = pack.days.slice(-10).map(d => `Day${d.day} ${d.theme}`).join(" / ");
-    return `TAKTの問題を追加して。\n\nGitHubの ${REPO} リポジトリの data/pack.json に、Day${last + 1} から5日分（1日5問）を追加してください。README のルール（既存の問題の順番は変えない、正解の番号を必ず確認する、全問に詳しい解説 deep を付ける）に従ってください。数値や基準はWebで裏を取ってください。\n\n今の正答率：${weak}\n最近のテーマ：${themes}`;
+    return [
+      `TAKT（食品メーカーの生産技術トレーニングアプリ）の問題を、Day${from}〜Day${from + 2} の3日分（1日5問）作ってください。`,
+      "",
+      "【読み手】カルビーの生産技術職に入る新人。物理は高校レベルから学び直し中。",
+      "【分野】物理・工学計算 / 食品プロセス / 設備・電気・制御 / 品質・改善手法。毎日4分野をすべて1問以上入れ、苦手な分野を少し多めにする。",
+      `【今の正答率】${weak}`,
+      `【最近のテーマ（重ならないように）】${themes}`,
+      "",
+      "【守ること】",
+      "- 4択で正解は1つ。誤答は「よくある勘違い」で作る。",
+      "- 数値・基準・法令は確かなものだけ。できればWebで裏を取る。計算問題は必ず自分で解いて、正解の選択肢と一致することを確かめる。",
+      "- answer は正解の選択肢の番号（0始まり）、answerText は正解の選択肢の文字列をそのまま。",
+      "- explanation は1〜2文、detail は3〜6文、deep は「■ 前提になる知識」「■ 仕組みと考え方（計算は途中式）」「■ ほかの選択肢がなぜ違うか」「■ 食品工場ではこう効く」「■ よくある勘違い」の見出しで400〜700字。keyPoints は2〜3個。",
+      "",
+      "【出力】説明の文章は書かず、次の形のJSONを1つのコードブロックだけで出してください。",
+      '{"days":[{"day":' + from + ',"theme":"20字程度","questions":[{"category":"物理・工学計算","prompt":"問題文","options":["A","B","C","D"],"answer":0,"answerText":"A","explanation":"…","detail":"…","deep":"■ 前提になる知識\\n…","keyPoints":["…","…"]}]}]}',
+    ].join("\n");
+  }
+
+  // ---------- importing new days pasted from Claude ----------
+  function parseLoose(text) {
+    const a = text.indexOf("{"), b = text.lastIndexOf("}");
+    if (a < 0 || b < a) throw new Error("JSONが見つかりません");
+    const body = text.slice(a, b + 1);
+    try { return JSON.parse(body); } catch (_) {}
+    return JSON.parse(body.replace(/[“”„‟″‶＂]/g, '"'));
+  }
+  function importDays(text) {
+    const data = parseLoose(text);
+    const daysIn = Array.isArray(data) ? data : Array.isArray(data.days) ? data.days : (data.questions ? [data] : []);
+    const taken = new Set(basePack.days.map(d => d.day));
+    const added = [];
+    let next = lastDay() + 1;
+    for (const d of daysIn) {
+      const qs = [];
+      for (const q of (d.questions || [])) {
+        const opts = Array.isArray(q.options) ? q.options.map(String) : [];
+        if (opts.length !== 4 || !q.prompt) continue;
+        let ans = Number(q.answer);
+        if (q.answerText != null) { const k = opts.findIndex(o => o.trim() === String(q.answerText).trim()); if (k < 0) continue; ans = k; }
+        if (!(ans >= 0 && ans < 4)) continue;
+        qs.push({ category: catOf(q.category).key === "その他" ? String(q.category || "その他") : catOf(q.category).key, prompt: String(q.prompt), options: opts, answer: ans,
+          explanation: String(q.explanation || ""), detail: String(q.detail || ""), deep: String(q.deep || ""), keyPoints: Array.isArray(q.keyPoints) ? q.keyPoints.map(String).slice(0, 4) : [] });
+      }
+      if (!qs.length) continue;
+      let day = Number(d.day);
+      if (!(day > 0) || taken.has(day) || added.some(x => x.day === day) || (rec.extraDays || []).some(x => x.day === day)) day = next;
+      next = Math.max(next, day + 1);
+      added.push({ day, theme: String(d.theme || `Day${day}`), questions: qs, imported: new Date().toISOString() });
+    }
+    if (!added.length) throw new Error("使える問題がありませんでした");
+    rec.extraDays = [...(rec.extraDays || []), ...added];
+    persist(); mergePack();
+    return added;
   }
   function requestCard(left) {
+    const ta = h("textarea", { id: "importbox", placeholder: "Claudeの返事（JSONのコードブロック）をここに貼り付け", "aria-label": "Claudeの返事", autocomplete: "off", autocorrect: "off", autocapitalize: "off", spellcheck: "false" });
     return h("section", { class: "card" },
       h("div", { class: "section-head" }, h("h2", null, "問題を追加する"), h("span", { class: "small muted" }, `残り ${left}日分`)),
-      h("p", { class: "small muted" }, online()
-        ? "ボタンを押すと頼む文章をコピーしてClaudeが開きます。貼り付けて送ると、苦手な分野も考えた5日分が追加され、次にアプリを開いたときに届きます。"
-        : "オフラインです。電波があるときにここから頼めます。"),
-      h("div", { class: "row" }, h("button", { class: "btn " + (left <= 1 ? "primary" : "ghost"), disabled: !online(), onclick: () => openClaude(requestText(), "頼む文章をコピーしました。Claudeで貼り付けて送ってください") }, "Claudeに問題を頼む")));
+      h("ol", { class: "steps small" },
+        h("li", null, "「Claudeに問題を頼む」を押すと、頼む文章がコピーされてClaudeが開きます。貼り付けて送ってください。"),
+        h("li", null, "Claudeの返事のコードブロックをコピーします（右上のコピーボタン）。"),
+        h("li", null, "下に貼って「取り込む」を押すと、3日分が追加されます。")),
+      h("div", { class: "row" }, h("button", { class: "btn " + (left <= 1 ? "primary" : "ghost"), disabled: !online(), onclick: () => openClaude(requestText(), "頼む文章をコピーしました。Claudeで貼り付けて送ってください") }, "Claudeに問題を頼む")),
+      online() ? null : h("p", { class: "small muted" }, "オフラインなので頼めませんが、コピー済みの返事の取り込みはできます。"),
+      ta,
+      h("div", { class: "row" }, h("button", { class: "btn ghost", onclick: () => {
+        try {
+          const added = importDays(ta.value);
+          ta.value = "";
+          toast(`Day${added[0].day}${added.length > 1 ? "〜" + added[added.length - 1].day : ""} を追加しました（${added.reduce((n, d) => n + d.questions.length, 0)}問）`);
+          render();
+        } catch (e) { toast("取り込めませんでした。返事のコードブロックをそのまま貼ってください"); }
+      } }, "取り込む")));
   }
 
   function viewQuiz() {
@@ -664,13 +731,19 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
   }
 
   // ---------- boot ----------
+  function mergePack() {
+    const base = basePack.days || [];
+    const have = new Set(base.map(d => d.day));
+    const extra = (rec.extraDays || []).filter(d => !have.has(d.day));
+    pack = { ...basePack, days: [...base, ...extra].sort((a, b) => a.day - b.day) };
+  }
   async function loadPack() {
     try {
       const res = await fetch("data/pack.json", { cache: "no-store" });
       const p = await res.json();
       if (p && Array.isArray(p.days)) {
-        p.days = p.days.filter(d => !d.removed).map(d => ({ ...d, questions: d.questions }));
-        pack = p;
+        p.days = p.days.filter(d => !d.removed);
+        basePack = p;
       }
     } catch (_) {}
     try {
@@ -678,6 +751,7 @@ button.field{appearance:none;-webkit-appearance:none;background:none;border:0;co
       const n = await res.json();
       if (n && Array.isArray(n.notes)) remoteNotes = n.notes;
     } catch (_) {}
+    mergePack();
   }
   load();
   app.append(h("p", { class: "muted" }, "読み込んでいます…"));

@@ -1,5 +1,5 @@
 // TAKT service worker: app shell cache-first, question pack network-first.
-const SHELL = "takt-shell-v7";
+const SHELL = "takt-shell-v8";
 const DATA = "takt-data";
 const SHELL_FILES = ["./", "index.html", "manifest.webmanifest", "icon-180.png", "icon-192.png", "icon-512.png"];
 

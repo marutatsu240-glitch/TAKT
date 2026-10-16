@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>TAKT</title>
 <meta name="description" content="食品工場の生産技術を、毎日5問ずつ。">
-<meta name="theme-color" content="#11151b">
+<meta name="theme-color" content="#0d1114">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -16,21 +16,15 @@
 <style>
 /* Layout: one 640px column. Status strip, today's action, field balance, logbook. System fonts only so it works offline. */
 :root{
-  --bg:#edf0f3; --surface:#ffffff; --sunk:#e3e7ed; --ink:#17202c; --muted:#596476; --line:#d2d8e0;
-  --accent:#a8690a; --accent-soft:#f5e8cf;
-  --ok:#1b7a45; --ok-soft:#ddf0e4; --ng:#b33232; --ng-soft:#f7e1e1;
-  --c-phys:#2c63aa; --c-food:#b85f15; --c-equip:#287a4f; --c-qc:#7049a6; --c-other:#596476;
+  /* Industrial: graphite floor, brushed-steel panels, safety-amber for anything you press. */
+  --bg:#0d1114; --surface:#161c21; --surface-2:#1c232a; --sunk:#222a32; --ink:#e8ecef; --muted:#8e99a4; --line:#2b343d;
+  --accent:#f2a33a; --accent-ink:#1a1206; --accent-soft:#3a2a12;
+  --ok:#4fc58b; --ok-soft:#14301f; --ng:#ff7474; --ng-soft:#3a1a1c;
+  --c-phys:#6fa8ff; --c-food:#ff9d4d; --c-equip:#5fd39a; --c-qc:#c19bff; --c-other:#8e99a4;
   --f-body:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic",sans-serif;
   --f-mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
-  color-scheme:light;
-}
-@media (prefers-color-scheme: dark){ :root{
-  --bg:#11151b; --surface:#1a2029; --sunk:#232a35; --ink:#e7ebf1; --muted:#9aa5b5; --line:#2c3440;
-  --accent:#e2a640; --accent-soft:#3a2d16;
-  --ok:#5cc58a; --ok-soft:#173327; --ng:#ef7a7a; --ng-soft:#3a1d1f;
-  --c-phys:#7aa8ec; --c-food:#eb9a55; --c-equip:#6ccb98; --c-qc:#b496e6; --c-other:#9aa5b5;
   color-scheme:dark;
-}}
+}
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--f-body);font-size:15px;line-height:1.75;-webkit-tap-highlight-color:transparent}
@@ -45,7 +39,7 @@ p{margin:0}
 .small{font-size:.82rem}
 .label{font-family:var(--f-mono);font-size:.7rem;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
 
-.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding-bottom:14px;border-bottom:2px solid var(--ink)}
+.top{position:relative;display:flex;align-items:flex-end;justify-content:space-between;gap:12px;padding-bottom:18px}
 .brand{font-family:var(--f-mono);font-weight:700;font-size:1.6rem;letter-spacing:.2em;line-height:1.1}
 .top .sub{font-size:.8rem;color:var(--muted)}
 .dayno{font-family:var(--f-mono);font-weight:600;font-size:.85rem;color:var(--accent);white-space:nowrap}
@@ -60,7 +54,8 @@ p{margin:0}
 .card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:18px;display:flex;flex-direction:column;gap:12px}
 .row{display:flex;flex-wrap:wrap;gap:10px}
 .btn{appearance:none;-webkit-appearance:none;border:1px solid transparent;border-radius:10px;padding:12px 18px;font:700 .95rem var(--f-body);cursor:pointer;display:inline-flex;align-items:center;gap:8px;line-height:1.3;color:inherit}
-.btn.primary{background:var(--ink);color:var(--bg)}
+.btn.primary{background:var(--accent);color:var(--accent-ink);box-shadow:inset 0 -3px 0 rgba(0,0,0,.28),0 1px 0 rgba(255,255,255,.08)}
+.btn.primary:active{transform:translateY(1px);box-shadow:inset 0 -1px 0 rgba(0,0,0,.28)}
 .btn.ghost{background:transparent;color:var(--ink);border-color:var(--line)}
 .btn.ghost:active{background:var(--sunk)}
 .btn.sm{padding:8px 12px;font-size:.85rem}
@@ -132,9 +127,55 @@ textarea{width:100%;min-height:7em;font:.8rem var(--f-mono);color:var(--ink);bac
 details summary{cursor:pointer;font-weight:700}
 .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(20px + env(safe-area-inset-bottom,0px));background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:999px;font-size:.85rem;font-weight:700}
 .foot{font-size:.76rem;color:var(--muted);border-top:1px solid var(--line);padding-top:12px}
+
+/* ---- industrial skin ---- */
+body{
+  background-color:var(--bg);
+  background-image:
+    radial-gradient(120% 80% at 50% -10%, rgba(242,163,58,.07), transparent 60%),
+    linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.015) 1px, transparent 1px);
+  background-size:100% 100%, 96px 96px, 96px 96px, 24px 24px, 24px 24px;
+  background-attachment:fixed;
+}
+.gear{position:fixed;z-index:0;pointer-events:none;color:var(--ink);opacity:.05}
+.gear.g1{width:340px;height:340px;top:calc(-90px + env(safe-area-inset-top,0px));right:-110px;animation:spin 90s linear infinite}
+.gear.g2{width:200px;height:200px;top:calc(150px + env(safe-area-inset-top,0px));right:150px;animation:spin 54s linear infinite reverse;opacity:.035}
+@keyframes spin{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion: reduce){.gear{animation:none}}
+.wrap{position:relative;z-index:1}
+.top::after{content:"";position:absolute;left:0;right:0;bottom:0;height:8px;border-radius:2px;
+  background:repeating-linear-gradient(-45deg,var(--accent) 0 10px,#15191d 10px 20px);opacity:.9}
+.brand{color:var(--ink);text-shadow:0 0 18px rgba(242,163,58,.18)}
+.brand span{color:var(--accent)}
+.card,.stats,.fields,.log{
+  position:relative;border-color:var(--line);
+  background:
+    repeating-linear-gradient(90deg, rgba(255,255,255,.012) 0 1px, transparent 1px 3px),
+    linear-gradient(180deg,var(--surface-2),var(--surface));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 10px 24px -14px rgba(0,0,0,.7);
+}
+.card::before,.card::after{content:"";position:absolute;top:8px;width:6px;height:6px;border-radius:50%;
+  background:radial-gradient(circle at 35% 35%,#6b7783,#2a323a 70%);box-shadow:0 1px 0 rgba(0,0,0,.5)}
+.card::before{left:8px}.card::after{right:8px}
+.stat .n{color:var(--accent);text-shadow:0 0 12px rgba(242,163,58,.25)}
+.stat .n small{color:var(--muted);text-shadow:none}
+.label{color:var(--muted)}
+.opt{background:var(--sunk)}
+.kp{background:var(--accent-soft);border-left:3px solid var(--accent)}
+.deep{background:rgba(0,0,0,.25);border:1px solid var(--line)}
+.track{background:#0f1418;box-shadow:inset 0 1px 2px rgba(0,0,0,.6)}
+.fill{background:repeating-linear-gradient(-45deg,var(--c) 0 6px,color-mix(in srgb,var(--c) 75%,#000) 6px 12px)}
+.pip.on{background:var(--accent)}
+.toast{background:var(--accent);color:var(--accent-ink)}
+textarea,.askbox input{background:#0f1418}
 </style>
 </head>
 <body>
+<svg class="gear g1" viewBox="0 0 100 100" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M44 2h12l2 11a38 38 0 0 1 9 4l9-6 9 9-6 9a38 38 0 0 1 4 9l11 2v12l-11 2a38 38 0 0 1-4 9l6 9-9 9-9-6a38 38 0 0 1-9 4l-2 11H44l-2-11a38 38 0 0 1-9-4l-9 6-9-9 6-9a38 38 0 0 1-4-9L2 56V44l11-2a38 38 0 0 1 4-9l-6-9 9-9 9 6a38 38 0 0 1 9-4zM50 32a18 18 0 1 0 0 36 18 18 0 0 0 0-36z"/></svg>
+<svg class="gear g2" viewBox="0 0 100 100" aria-hidden="true"><path fill="currentColor" fill-rule="evenodd" d="M44 2h12l2 11a38 38 0 0 1 9 4l9-6 9 9-6 9a38 38 0 0 1 4 9l11 2v12l-11 2a38 38 0 0 1-4 9l6 9-9 9-9-6a38 38 0 0 1-9 4l-2 11H44l-2-11a38 38 0 0 1-9-4l-9 6-9-9 6-9a38 38 0 0 1-4-9L2 56V44l11-2a38 38 0 0 1 4-9l-6-9 9-9 9 6a38 38 0 0 1 9-4zM50 32a18 18 0 1 0 0 36 18 18 0 0 0 0-36z"/></svg>
 <div class="wrap" id="app"></div>
 <div class="toast" id="toast" role="status" hidden></div>
 <script>
@@ -149,7 +190,7 @@ details summary{cursor:pointer;font-weight:700}
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
-  const APP_VERSION = "v4";
+  const APP_VERSION = "v5";
 
   let pack = { days: [] };
   let rec = { days: {} };
@@ -257,7 +298,7 @@ details summary{cursor:pointer;font-weight:700}
   // ---------- views ----------
   function header(right) {
     return h("header", { class: "top" },
-      h("div", null, h("div", { class: "brand" }, "TAKT"), h("div", { class: "sub" }, "食品工場の生産技術を、毎日5問ずつ")),
+      h("div", null, h("div", { class: "brand" }, "TAK", h("span", null, "T")), h("div", { class: "sub" }, "食品工場の生産技術を、毎日5問ずつ")),
       h("div", { style: "display:flex;flex-direction:column;align-items:flex-end;gap:4px" },
         navigator.onLine ? null : h("span", { class: "net" }, "オフライン"), right));
   }

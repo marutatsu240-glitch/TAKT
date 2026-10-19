@@ -216,6 +216,10 @@ a.btn{text-decoration:none}
 .noterow .notehead{flex:1;min-width:0}
 .note.dim{opacity:.55}
 .tabs.five{grid-template-columns:1.2fr repeat(4,minmax(0,1fr))}
+.ttl{display:flex;flex-direction:column;gap:2px;min-width:0}
+.where{display:flex;flex-wrap:wrap;gap:4px}
+.wherebtn{appearance:none;-webkit-appearance:none;font:600 .7rem var(--f-mono);color:var(--accent);background:var(--accent-soft);border:1px solid transparent;border-radius:6px;padding:1px 6px;cursor:pointer}
+.note{scroll-margin-top:calc(12px + env(safe-area-inset-top,0px))}
 .notes{display:flex;flex-direction:column;gap:10px;border-top:1px solid var(--line);padding-top:10px}
 .qa{display:flex;flex-direction:column;gap:6px;background:rgba(0,0,0,.2);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
 .qa .qq{font-weight:700}
@@ -252,7 +256,7 @@ a.btn{text-decoration:none}
   const catOf = (n) => CATS.find(c => c.key === n) || OTHER;
   const KEYS = ["A", "B", "C", "D"];
   const STORE = "takt.records.v1";
-  const APP_VERSION = "v13";
+  const APP_VERSION = "v14";
 
   let pack = { days: [] }, basePack = { days: [] }, syl = { topics: [] };
   let remoteNotes = [];
@@ -894,6 +898,8 @@ a.btn{text-decoration:none}
       h("span", { class: "muted" }, ansN ? `正答率 ${Math.round(okN / ansN * 100)}%（${okN}/${ansN}）` : "解答の記録なし"),
       h("label", { class: "chk" }, h("input", { type: "checkbox", id: "wrongonly", checked: fieldWrongOnly ? true : null, onchange: (e) => { fieldWrongOnly = e.target.checked; render(); } }), `間違えた問題だけ（${wrong.length}）`)));
     const cov = coverage(), topics = syl.topics.filter(t => t.field === fieldSel);
+    const whereMap = new Map();
+    for (const d of pack.days) d.questions.forEach((q, i) => { if (q.topic) { const l = whereMap.get(q.topic) || []; l.push({ day: d.day, i }); whereMap.set(q.topic, l); } });
     if (topics.length) {
       const asked = topics.filter(t => cov.has(t.id)).length;
       nodes.push(h("details", { class: "card curr", open: openNote.has("curr-" + fieldSel) ? true : null, ontoggle: (e) => { e.target.open ? openNote.add("curr-" + fieldSel) : openNote.delete("curr-" + fieldSel); } },
@@ -909,7 +915,8 @@ a.btn{text-decoration:none}
               : c.ok === c.ans ? h("span", { class: "tmark ok" }, "○")
               : c.ok ? h("span", { class: "tmark on" }, `${c.ok}/${c.ans}`)
               : h("span", { class: "tmark ng" }, "×");
-            return h("li", { class: c ? "" : "todo" }, h("span", { class: "tid" }, t.id), h("span", null, t.title), mark);
+            const where = (whereMap.get(t.id) || []).map(w => h("button", { class: "wherebtn", onclick: () => jumpTo(w.day, w.i) }, `Day${w.day}・${w.i + 1}問目`));
+            return h("li", { class: c ? "" : "todo" }, h("span", { class: "tid" }, t.id), h("span", { class: "ttl" }, h("span", null, t.title), where.length ? h("span", { class: "where" }, where) : null), mark);
           }))))));
     }
     const list = fieldWrongOnly ? wrong : all;
@@ -925,16 +932,27 @@ a.btn{text-decoration:none}
       const key = `${d.day}-${i}`, open = openNote.has(key), nn = notesFor(d.day, i).length;
       const a = answered(d.day, i), good = right(d, i), unk = unknownAns(d.day, i), rv = r(d.day).reviewedOk[i];
       const status = !a ? h("span", { class: "small muted" }, "解答なし") : good ? h("span", { class: "mark-ok small" }, "○") : h("span", { class: "mark-ng small" }, (unk ? "？" : "×") + (rv ? "→復習で○" : ""));
-      const card = h("article", { class: "card note" + (isStar(d.day, i) || !unstarredNow.has(key) ? "" : " dim") },
+      const card = h("article", { class: "card note" + (isStar(d.day, i) || !unstarredNow.has(key) ? "" : " dim"), id: "note-" + key },
         h("div", { class: "noterow" },
           h("button", { class: "notehead", onclick: () => { open ? openNote.delete(key) : openNote.add(key); render(); }, "aria-expanded": open ? "true" : "false" },
-            h("span", { class: "dayno" }, `Day${d.day} Q${i + 1}`), status, nn ? h("span", { class: "small muted" }, `会話${nn}`) : null, h("span", { class: "chev" }, open ? "－" : "＋")),
+            h("span", { class: "dayno" }, `Day${d.day}・${i + 1}問目`), status, nn ? h("span", { class: "small muted" }, `会話${nn}`) : null, h("span", { class: "chev" }, open ? "－" : "＋")),
           starBtn(d.day, i)),
         h("p", { class: "prompt" }, q.prompt),
         h("p", { class: "ans" }, h("span", { class: "label" }, "正解 "), q.options[q.answer]),
         q.keyPoints && q.keyPoints.length ? h("ul", { class: "kp" }, q.keyPoints.map(k => h("li", null, k))) : null);
       if (open) card.append(h("div", { class: "fb" }, h("p", null, q.explanation), q.detail ? h("p", { class: "small" }, q.detail) : null, deepBlock(d.day, i, q)));
       return card;
+  }
+
+  function jumpTo(day, i) {
+    const d = dayOf(day), q = d && d.questions[i];
+    if (!q) return;
+    const rr = rec.days[day];
+    if (!(answered(day, i) || (rr && rr.done))) { toast(`Day${day}・${i + 1}問目はまだ解いていません`); return; }
+    fieldSel = catOf(q.category).key; fieldWrongOnly = false;
+    openNote.add(`${day}-${i}`);
+    if (view !== "fields") go("fields"); else render();
+    setTimeout(() => { const el = document.getElementById(`note-${day}-${i}`); if (el) el.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" }); }, 50);
   }
 
   function viewStars() {
